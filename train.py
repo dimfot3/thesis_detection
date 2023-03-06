@@ -4,11 +4,16 @@ import math
 import numpy as np
 import torch 
 from torch.utils.data import DataLoader
-from utils.MNIST3d import MNIST3D
-from models.Pointnet import PointNetClass
+from models.Pointnet import PointNetClass, PointNetSeg
 from torch.utils.data.dataset import random_split
 from tqdm import tqdm
 import wandb
+import yaml
+import sys
+sys.path.insert(0, 'tests')
+from utils.MNIST3d import MNIST3D
+
+
 # reproducability
 random_seed = 0 
 torch.manual_seed(random_seed)
@@ -80,13 +85,15 @@ def test(model, test_dataset):
 
 def main(args):
     # loading dataset and splitting to train, valid, test
-    dataset = MNIST3D(256)
+    dataset = MNIST3D(256, './tests/data')
     traindata, validata, testdata = random_split(dataset, [round(1 - args['valid_per'] - args['test_per'], 2), \
          args['valid_per'], args['test_per']])
     # loading model, optimizer, scheduler, loss func
-    model = PointNetClass(10).to(args['device'])
+    model = PointNetSeg(10).to(args['device'])
     # loading weights for the model
-    model.load_state_dict(torch.load('./data/E7_test.pt'))
+    if args['init_weights'] != None:
+        model.load_state_dict(torch.load(args['init_weights']))
+        print('Loaded weights', args['init_weights'])
     loss = torch.nn.NLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'], weight_decay=args['l2coef'])
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, args['gamma'], verbose=False)
@@ -96,27 +103,15 @@ def main(args):
     args['scheduler'] = scheduler
     
     # training the model
-    #best_loss, best_acc = train(traindata, args, validata)
+    best_loss, best_acc = train(traindata, args, validata)
 
     # testing the model
     testing_acc = test(model, testdata)
+    return best_loss, best_acc
     
 if __name__ == '__main__':
-    args = {'valid_per': 0.2,
-            'test_per': 0.1,
-            'lr': 0.001,
-            'l2coef': 1e-7,
-            'gamma': 0.99,
-            'batch_size': 128,
-            'epochs': 10,
-            'device': 'cuda:0' if torch.cuda.is_available() else 'cpu',
-            'valid_freq': 2,
-            'stop_counter': 3,
-            'save_model': True,
-            'save_path': './data/',
-            'session_name': 'test',
-            'online': False
-            }
+    with open('config/train_config.yaml', 'r') as file:
+        args = yaml.safe_load(file)
     if args['online']:
         wandb.init(
             project="PointNetTest",
