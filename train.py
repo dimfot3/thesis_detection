@@ -24,7 +24,7 @@ np.random.seed(random_seed)
 def train(traindata, args, validata=None):
     train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True)
     best_val_loss, best_val_acc = 1e10, 0
-    stop_counter = 0
+    stop_counter =  0
     # train loop
     for epoch in range(args['epochs']):
         args['model'].train()
