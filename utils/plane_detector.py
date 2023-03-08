@@ -65,10 +65,10 @@ def classify_points(point_vectors):
     dot_prods[valid_idxs] = np.dot(point_vectors[valid_idxs], normalz.T)
     thetas = np.arccos(dot_prods) * 180 / np.pi
     class_arr = np.zeros((point_vectors.shape[0], ), dtype='int') - 1
-    class_arr[valid_idxs & (thetas[:, 0] < 15) ] = 0        # ceiling
-    class_arr[valid_idxs & (thetas[:, 1] < 15) ] = 1        # floor
     class_arr[valid_idxs & ((thetas[:, 2] < 45) | (thetas[:, 3] < 45))  ] = 2         # wallX
     class_arr[valid_idxs & ((thetas[:, 4] < 45) | (thetas[:, 5] < 45))  ] = 3          # wallY
+    class_arr[valid_idxs & (thetas[:, 1] < 15) ] = 1        # floor
+    class_arr[valid_idxs & (thetas[:, 0] < 15) ] = 0        # ceiling
     return class_arr
 
 def generate_regions(points, classes, distx, k):
