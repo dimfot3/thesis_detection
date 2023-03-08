@@ -41,14 +41,12 @@ def compute_local_pca(pointcloud, radius, min_p=10):
         pca.fit(local_points)
         normal_verctor = pca.components_[np.argmin(pca.explained_variance_)]
         # Store the eigenvectors and eigenvalues of the PCA
-        dot_product = np.dot(normal_verctor - pointcloud[i, :3], normal_verctor)
-        if dot_product < 0:
-            normal_verctor *= -1.0
-        eigenvectors[i, :] = normal_verctor
+        dot_product = np.sign(np.dot(-pointcloud[i, :3], normal_verctor))
+        eigenvectors[i, :] = normal_verctor if dot_product >= 0 else -normal_verctor
         eigenvalues[i] = np.min(pca.explained_variance_)
     return eigenvectors, eigenvalues
 
-def classify_points(point_vectors, eigenvalues, theta_vert_err=10, theta_hor_err=10, eigenvalmin=0.1):
+def classify_points(point_vectors):
     """
     classify_points function classifies each point in a pointcloud into one of four categories - floor, ceiling, vertical and other.
 
@@ -62,13 +60,15 @@ def classify_points(point_vectors, eigenvalues, theta_vert_err=10, theta_hor_err
     if point_vectors.shape[0] == 0: return np.array([], dtype='int')        # hangle empty input
     valid_idxs = (np.abs(point_vectors).sum(axis=1) != 0)
     point_vectors[valid_idxs] = point_vectors[valid_idxs] / np.linalg.norm(point_vectors[valid_idxs], axis=1).reshape(-1, 1)       # normalize eigen vectors
-    normalz = np.array([[0, 0, 1], [1, 0, 0]])
-    dot_prods = np.zeros((point_vectors.shape[0], 2))
+    normalz = np.array([[0, 0, -1], [0, 0, 1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]])
+    dot_prods = np.zeros((point_vectors.shape[0], 6))
     dot_prods[valid_idxs] = np.dot(point_vectors[valid_idxs], normalz.T)
-    thetas = np.arccos(np.abs(dot_prods)) * 180 / np.pi
+    thetas = np.arccos(dot_prods) * 180 / np.pi
     class_arr = np.zeros((point_vectors.shape[0], ), dtype='int') - 1
-    class_arr[valid_idxs & (thetas[:, 0] <= theta_hor_err) ] = 0
-    class_arr[valid_idxs & (90 - thetas[:, 0] <= theta_vert_err) ] = 1
+    class_arr[valid_idxs & (thetas[:, 0] < 15) ] = 0        # ceiling
+    class_arr[valid_idxs & (thetas[:, 1] < 15) ] = 1        # floor
+    class_arr[valid_idxs & ((thetas[:, 2] < 45) | (thetas[:, 3] < 45))  ] = 2         # wallX
+    class_arr[valid_idxs & ((thetas[:, 4] < 45) | (thetas[:, 5] < 45))  ] = 3          # wallY
     return class_arr
 
 def generate_regions(points, classes, distx, k):
