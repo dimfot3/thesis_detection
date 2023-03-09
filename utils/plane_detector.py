@@ -6,6 +6,7 @@ from scipy.spatial.distance import cdist
 from functools import reduce
 import ezdxf
 
+
 def compute_local_pca(pointcloud, radius, min_p=10):
     """
     Computes the principal component analysis (PCA) for each point in a given point cloud within a certain radius.
@@ -139,15 +140,22 @@ def estimate_plane_ransac(data, n_iterations=100, threshold=0.1):
     plane_normal = np.zeros((3, ))
     plane_normal[min_cov_idx] = -1
     plane_normal[other_idxs] = reg.coef_
+    plane_normal /= np.linalg.norm(plane_normal)
     return inliers, plane_normal
     
-def pca_plane_det(pcl, pca_radius=0.5, distmin=0.5, minp=15):
+def pca_plane_det(pcl, pca_radius=0.5, distmin=0.5, minp=15, ransac_iter=100, ransac_thres=0.1):
     eigv, eigenvalues = compute_local_pca(pcl, pca_radius)
-    classes = classify_points(eigv, eigenvalues)
+    classes = classify_points(eigv)
     regions, class_regions = generate_regions(pcl, classes, distmin, minp)
     filter_idxs = np.argwhere(class_regions >= 0).reshape(-1, )
-    regions = [regions[i] for i in filter_idxs]    # filter out floor and ceils and other objects
-    return regions
+    regions = [regions[i] for i in filter_idxs]
+    plane_inliers = []
+    plane_normals = []
+    for region in regions:
+        inliers, plane_normal = estimate_plane_ransac(pcl[region], ransac_iter, ransac_thres)
+        plane_inliers.append(region[inliers])
+        plane_normals.append(plane_normal)
+    return plane_inliers, plane_normals
 
 def points_near_line_segment(points, p1, p2):
     # Calculate the line segment vector and its length squared
