@@ -123,7 +123,47 @@ def get_point_annotations_kitti(pcd, dflabels, points_min=300):
              (pcl[:, 1] < maxy) & (pcl[:, 2] > minz) & (pcl[:, 2] < maxz))
     return annotations
 
-def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt):
+def merge_boxes(boxes, annots, k):
+    merged_boxes = []
+    merged_annot = []
+    current_box = np.array([]).reshape(-1, 3)
+    current_annot = np.array([], dtype='bool')
+    current_sum = 0
+    for box, annot in zip(boxes, annots):
+        if current_sum + len(box) <= k:
+            current_box = np.append(current_box, box, axis=0)
+            current_annot = np.append(current_annot, annot)
+            current_sum += len(box)
+        else:
+            merged_boxes.append(current_box)
+            merged_annot.append(current_annot)
+            current_box = box
+            current_annot = annot
+            current_sum = len(box)
+    if current_box.shape[0] > 0:
+        merged_boxes.append(current_box)
+        merged_annot.append(current_annot)
+    return merged_boxes, merged_annot
+
+def canonicalize_boxes(boxes, annots, k):
+    # normalize its origins
+    centers = []
+    for i, box in enumerate(boxes):
+        centers.append(np.mean(box, axis=0))
+    # normalize its dimension
+    for i, (box, annot) in enumerate(zip(boxes, annots)):
+        if len(box) < k:
+            randidxs = np.random.choice(box.shape[0], k - box.shape[0])
+            boxes[i] = np.append(boxes[i], box[randidxs], axis=0)
+            annots[i] = np.append(annots[i], annot[randidxs])
+        elif len(box) > k:
+            rand_idxs = np.random.choice(box.shape[0], k)
+            boxes[i] = box[rand_idxs]
+            annots[i] = annot[rand_idxs]
+        boxes[i] = (boxes[i], centers[i])
+    return boxes, annots
+
+def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl_box_num=2048):
     """
     Splits a 3D point cloud into overlapping boxes of a given size.
     :param pcd: numpy array of shape (N,3) containing the 3D point cloud
@@ -157,13 +197,14 @@ def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt):
                 mask = ((pcd[:, 0] >= center_x - box_size / 2) & (pcd[:, 0] < center_x + box_size / 2)
                         & (pcd[:, 1] >= center_y - box_size / 2) & (pcd[:, 1] < center_y + box_size / 2)
                         & (pcd[:, 2] >= center_z - box_size / 2) & (pcd[:, 2] < center_z + box_size / 2))
-                center = np.array([center_x, center_y, center_z])
-                points_in_box = pcd[mask] - center
+                points_in_box = pcd[mask]
                 annotations_in_box = annotations[mask]
                 # Add the box to the list if it contains any points
-                if points_in_box.shape[0] > 300:
-                    boxes.append((points_in_box, center))
+                if points_in_box.shape[0] > 300 and ((annotations_in_box==True).any()):
+                    boxes.append(points_in_box)
                     annotations_splitted.append(annotations_in_box)
+    boxes, annotations_splitted = merge_boxes(boxes, annotations_splitted, pcl_box_num)
+    boxes, annotations_splitted = canonicalize_boxes(boxes, annotations_splitted, pcl_box_num)
     return boxes, annotations_splitted
 
 def plot_animation_lcas(path, lebels_path, frame_pause=0.5):
@@ -204,7 +245,6 @@ def plot_animation_lcas(path, lebels_path, frame_pause=0.5):
         time.sleep(frame_pause)
         vis.remove_geometry(pcd, False)
     vis.destroy_window()
-
 
 def plot_animation_kitti(pcd_path, labels_path, frame_pause=0.5, box=True, frame_to_plot=1):
     """
@@ -252,7 +292,6 @@ def plot_animation_kitti(pcd_path, labels_path, frame_pause=0.5, box=True, frame
                 vis.remove_geometry(box3d, False)
     vis.destroy_window()
 
-
 def plot_frame_annotation_kitti(pcl_file, labels_file, box=True):
     """
     plot_frame_annotation is used for https://jrdb.erc.monash.edu/
@@ -277,7 +316,6 @@ def plot_frame_annotation_kitti(pcl_file, labels_file, box=True):
         colors[~annotations] = np.array([0, 0, 1])
         pcd.colors = o3d.utility.Vector3dVector(colors)
         o3d.visualization.draw_geometries([pcd])
-
 
 def plot_frame_annotation_kitti_v2(pcd, annotations):
     """

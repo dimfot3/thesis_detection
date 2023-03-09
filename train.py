@@ -20,7 +20,6 @@ torch.manual_seed(random_seed)
 torch.cuda.manual_seed(random_seed)
 np.random.seed(random_seed)
 
-
 def train(traindata, args, validata=None):
     train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True)
     best_val_loss, best_val_acc = 1e10, 0
@@ -89,12 +88,12 @@ def main(args):
     traindata, validata, testdata = random_split(dataset, [round(1 - args['valid_per'] - args['test_per'], 2), \
          args['valid_per'], args['test_per']])
     # loading model, optimizer, scheduler, loss func
-    model = PointNetSeg(10).to(args['device'])
+    model = PointNetSeg(1).to(args['device'])
     # loading weights for the model
     if args['init_weights'] != None:
         model.load_state_dict(torch.load(args['init_weights']))
         print('Loaded weights', args['init_weights'])
-    loss = torch.nn.NLLLoss()
+    loss = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'], weight_decay=args['l2coef'])
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, args['gamma'], verbose=False)
     args['model'] = model

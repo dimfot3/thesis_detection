@@ -149,5 +149,5 @@ if __name__ == '__main__':
     device = 'cuda:0'
     model = PointNetClass(10).to(device)
     summary(model, (1024, 3))
-    model = PointNetSeg(10).to(device)
+    model = PointNetSeg(1).to(device)
     summary(model, (1024, 3))
