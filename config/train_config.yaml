@@ -1,6 +1,6 @@
 valid_per: 0.2
 test_per: 0.1
-lr: 0.001
+lr: 0.1
 l2coef: 0.0000001
 gamma: 0.99
 batch_size: 128
@@ -8,9 +8,9 @@ epochs: 10
 device: 'cuda'
 valid_freq: 2
 stop_counter: 3
-save_model: true
+save_model: false
 save_path: './tests/data/'
-data_root_path: './tests/data/'
-init_weights: './tests/data/E7_test.pt'
+data_root_path: './datasets/datasets/JRDB/'
+init_weights: null
 session_name: test
 online: false

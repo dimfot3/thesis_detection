@@ -160,8 +160,7 @@ def canonicalize_boxes(boxes, annots, k):
             rand_idxs = np.random.choice(box.shape[0], k)
             boxes[i] = box[rand_idxs]
             annots[i] = annot[rand_idxs]
-        boxes[i] = (boxes[i], centers[i])
-    return boxes, annots
+    return boxes, annots, centers
 
 def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl_box_num=2048):
     """
@@ -204,8 +203,8 @@ def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl
                     boxes.append(points_in_box)
                     annotations_splitted.append(annotations_in_box)
     boxes, annotations_splitted = merge_boxes(boxes, annotations_splitted, pcl_box_num)
-    boxes, annotations_splitted = canonicalize_boxes(boxes, annotations_splitted, pcl_box_num)
-    return boxes, annotations_splitted
+    boxes, annotations_splitted, centers = canonicalize_boxes(boxes, annotations_splitted, pcl_box_num)
+    return boxes, annotations_splitted, centers
 
 def plot_animation_lcas(path, lebels_path, frame_pause=0.5):
     """

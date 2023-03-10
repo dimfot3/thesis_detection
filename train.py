@@ -1,5 +1,6 @@
 import sys
 sys.path.insert(0, '../')
+sys.path.insert(0, './utils')
 import math
 import numpy as np
 import torch 
@@ -10,8 +11,9 @@ from tqdm import tqdm
 import wandb
 import yaml
 import sys
+from utils import o3d_funcs
+from utils.humanDBLoader import humanDBLoader, custom_collate
 sys.path.insert(0, 'tests')
-from utils.MNIST3d import MNIST3D
 
 
 # reproducability
@@ -21,7 +23,7 @@ torch.cuda.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 def train(traindata, args, validata=None):
-    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True)
+    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate)
     best_val_loss, best_val_acc = 1e10, 0
     stop_counter =  0
     # train loop
@@ -29,13 +31,14 @@ def train(traindata, args, validata=None):
         args['model'].train()
         epoch_log = {}
         epoch_loss = 0
-        for batch_input, targets in tqdm(train_loader, desc=f'Epoch {epoch}: '):
-            batch_input, targets = batch_input.to(args['device']), targets.to(args['device'])
-            yout = args['model'](batch_input)
-            loss = args['loss'](yout, targets)
-            epoch_loss += loss.item() / len(train_loader)
-            loss.backward()
-            args['optimizer'].step()
+        for batch_input, targets, centers in tqdm(train_loader, desc=f'Epoch {epoch}: '):
+            for btch_idx in range(len(batch_input)):
+                mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].to(args['device'])
+                yout = args['model'](mini_btch_input).squeeze()
+                loss = args['loss'](yout, mini_btch_target)
+                epoch_loss += loss.item() / len(train_loader)
+                loss.backward()
+                args['optimizer'].step()
         args['scheduler'].step()
         epoch_log['Train loss'] = epoch_loss
         print(f'Epoch {epoch} loss: {epoch_loss}')
@@ -58,16 +61,17 @@ def train(traindata, args, validata=None):
     return best_val_loss, best_val_acc
 
 def validate(validdata, args, validata=None):
-    train_loader = DataLoader(validdata, batch_size=args['batch_size'], shuffle=True)
+    train_loader = DataLoader(validdata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate)
     val_loss = 0
     val_acc = 0
     args['model'].eval()
-    for batch_input, targets in tqdm(train_loader, desc=f'Validation: '):
-        batch_input, targets = batch_input.to(args['device']), targets.to(args['device'])
-        yout = args['model'](batch_input)
-        loss = args['loss'](yout, targets)
-        val_loss += loss.item() / len(train_loader)
-        val_acc += (torch.argmax(yout, dim=-1) == targets).sum() / len(validdata)
+    for batch_input, targets, centers in tqdm(train_loader, desc=f'Validation: '):
+        for btch_idx in range(len(batch_input)):
+            mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].to(args['device'])
+            yout = args['model'](mini_btch_input).squeeze()
+            loss = args['loss'](yout, mini_btch_target)
+            val_loss += loss.item() / len(train_loader)
+            val_acc += (torch.argmax(yout, dim=-1) == targets).sum() / len(validdata)
     print(f'Validation loss: {val_loss}, accuracy {val_acc}')
     return val_loss, val_acc.cpu().numpy()
 
@@ -75,16 +79,17 @@ def test(model, test_dataset):
     test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=True)
     test_acc = 0
     model.eval()
-    for batch_input, targets in tqdm(test_loader, desc=f'Testing: '):
-        batch_input, targets = batch_input.to(args['device']), targets.to(args['device'])
-        yout = model(batch_input)
-        test_acc += (torch.argmax(yout, dim=-1) == targets).sum() / len(test_dataset)
+    for batch_input, targets, centers in tqdm(test_loader, desc=f'Testing: '):
+        for btch_idx in range(len(batch_input)):
+            mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].to(args['device'])
+            yout = args['model'](mini_btch_input).squeeze()
+            test_acc += (torch.argmax(yout, dim=-1) == targets).sum() / len(test_dataset)
     print(f'Testing accuracy: {test_acc}')
     return test_acc.cpu().numpy()
 
 def main(args):
     # loading dataset and splitting to train, valid, test
-    dataset = MNIST3D(256, './tests/data')
+    dataset = humanDBLoader(args['data_root_path'])
     traindata, validata, testdata = random_split(dataset, [round(1 - args['valid_per'] - args['test_per'], 2), \
          args['valid_per'], args['test_per']])
     # loading model, optimizer, scheduler, loss func
@@ -102,10 +107,10 @@ def main(args):
     args['scheduler'] = scheduler
     
     # training the model
-    best_loss, best_acc = train(traindata, args, validata)
+    best_loss, best_acc = train(traindata, args, None)
 
     # testing the model
-    testing_acc = test(model, testdata)
+    #testing_acc = test(model, testdata)
     return best_loss, best_acc
     
 if __name__ == '__main__':
