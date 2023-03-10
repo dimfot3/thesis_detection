@@ -83,10 +83,10 @@ class PointNetEncoder(torch.nn.Module):
         x = torch.max(x, 2, keepdim=True)[0]
         x = x.view(-1, 1024)
         if self.global_feat:
-            return x
+            return x, trans, trans_feat
         else:
             x = x.view(-1, 1024, 1).repeat(1, 1, N)
-            return torch.cat([x, pointfeat], 1)
+            return torch.cat([x, pointfeat], 1), trans, trans_feat
 
 class PointNetClass(torch.nn.Module):
     def __init__(self, k=10, normal_channel=False):
@@ -133,7 +133,7 @@ class PointNetSeg(torch.nn.Module):
         x = x.transpose(2, 1)       # from (B, N, D) to (B, D, N)
         batchsize = x.size(0)
         n_pts = x.size(2)
-        x = self.feat(x)
+        x, trans, trans_feat = self.feat(x)
         x = self.relu(self.bn1(self.conv1(x)))
         x = self.relu(self.bn2(self.conv2(x)))
         x = self.relu(self.bn3(self.conv3(x)))
@@ -141,8 +141,19 @@ class PointNetSeg(torch.nn.Module):
         x = x.transpose(2,1).contiguous()
         x = self.log_softmax(x.view(-1,self.k))
         x = x.view(batchsize, n_pts, self.k)
-        return x
+        return x, trans, trans_feat
 
+def bn_momentum_adjust(m, momentum):
+    if isinstance(m, torch.nn.BatchNorm2d) or isinstance(m, torch.nn.BatchNorm1d):
+        m.momentum = momentum
+
+def feature_transform_reguliarzer(trans):
+    d = trans.size()[1]
+    I = torch.eye(d)[None, :, :]
+    if trans.is_cuda:
+        I = I.cuda()
+    loss = torch.mean(torch.norm(torch.bmm(trans, trans.transpose(2, 1)) - I, dim=(1, 2)))
+    return loss
 
 if __name__ == '__main__':
     #x_rand = torch.Tensor(np.random.random((32, 1024, 3)) * 300).to(device=device)

@@ -5,7 +5,7 @@ import math
 import numpy as np
 import torch 
 from torch.utils.data import DataLoader
-from models.Pointnet import PointNetClass, PointNetSeg
+from models.Pointnet import PointNetSeg, feature_transform_reguliarzer, bn_momentum_adjust
 from torch.utils.data.dataset import random_split
 from tqdm import tqdm
 import wandb
@@ -13,6 +13,7 @@ import yaml
 import sys
 from utils import o3d_funcs
 from utils.humanDBLoader import humanDBLoader, custom_collate
+from utils.o3d_funcs import plot_frame_annotation_kitti_v2
 sys.path.insert(0, 'tests')
 
 
@@ -31,17 +32,30 @@ def train(traindata, args, validata=None):
         args['model'].train()
         epoch_log = {}
         epoch_loss = 0
+        data_evaluated = 0
+        lr = max(args['lr'] * (0.5 ** (epoch // 20)), args['lr_clip'])
+        for param_group in args['optimizer'].param_groups:
+            param_group['lr'] = lr
+        momentum = args['btch_momentum'] + (0.99 - args['btch_momentum']) * min(epoch / (args['epochs']), 1.0)
+        args['model'] = args['model'].apply(lambda x: bn_momentum_adjust(x, momentum))
+        #classifier = classifier.apply(lambda x: bn_momentum_adjust(x, momentum))
         for batch_input, targets, centers in tqdm(train_loader, desc=f'Epoch {epoch}: '):
             for btch_idx in range(len(batch_input)):
-                mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].to(args['device'])
-                yout = args['model'](mini_btch_input).squeeze()
-                loss = args['loss'](yout, mini_btch_target)
-                epoch_loss += loss.item() / len(train_loader)
+                args['optimizer'].zero_grad()
+                mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].type(torch.long).to(args['device'])
+                yout, trans, trans_feat = args['model'](mini_btch_input)
+                # if btch_idx == 0:
+                #     first_pcl = batch_input[btch_idx][0].detach().cpu().numpy()
+                #     first_annot = np.argmax(yout[btch_idx].detach().cpu().numpy(), axis=1).astype('bool')
+                #     plot_frame_annotation_kitti_v2(first_pcl, first_annot)
+                #     print(yout.size(), mini_btch_target.size())
+                loss = args['loss'](yout.view(-1, 2), mini_btch_target.view(-1)) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
+                epoch_loss += loss.item()
                 loss.backward()
                 args['optimizer'].step()
-        args['scheduler'].step()
-        epoch_log['Train loss'] = epoch_loss
-        print(f'Epoch {epoch} loss: {epoch_loss}')
+                data_evaluated += mini_btch_input.size(0)
+        epoch_log['Train loss'] = epoch_loss / data_evaluated
+        print(f"Epoch {epoch} loss: {epoch_log['Train loss']}")
         # validation
         if((epoch + 1) % args['valid_freq'] == 0) and (validata!=None):
             val_loss, val_acc = validate(validata, args)
@@ -93,18 +107,16 @@ def main(args):
     traindata, validata, testdata = random_split(dataset, [round(1 - args['valid_per'] - args['test_per'], 2), \
          args['valid_per'], args['test_per']])
     # loading model, optimizer, scheduler, loss func
-    model = PointNetSeg(1).to(args['device'])
+    model = PointNetSeg(2).to(args['device'])
     # loading weights for the model
     if args['init_weights'] != None:
         model.load_state_dict(torch.load(args['init_weights']))
         print('Loaded weights', args['init_weights'])
-    loss = torch.nn.BCELoss()
+    loss = torch.nn.NLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'], weight_decay=args['l2coef'])
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, args['gamma'], verbose=False)
     args['model'] = model
     args['loss'] = loss
     args['optimizer'] = optimizer
-    args['scheduler'] = scheduler
     
     # training the model
     best_loss, best_acc = train(traindata, args, None)
