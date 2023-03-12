@@ -3,9 +3,19 @@ from sklearn.neighbors import KDTree
 from sklearn.decomposition import PCA
 from sklearn.linear_model import RANSACRegressor, LinearRegression
 from scipy.spatial.distance import cdist
+import matplotlib.pyplot as plt
 from functools import reduce
+import struct
 import ezdxf
 
+
+class Plane:
+    """
+    Plane is a structure that holds the inlier idxs and normal of a plane
+    """
+    def __init__(self, inliers=[], normal=None):
+        self.normal = normal
+        self.inliers = inliers
 
 def compute_local_pca(pointcloud, radius, min_p=10):
     """
@@ -192,3 +202,50 @@ def read_gr_lines(fpath):
     vertices = np.array([[vertex.dxf.location.x, vertex.dxf.location.y] for vertex in polyline.vertices]).reshape(-1, 2)
     lines = np.array([[vertices[2*i, 0], vertices[2*i, 1], vertices[2*i+1, 0], vertices[2*i+1, 1]] for i in range(vertices.shape[0]//2)])
     return lines
+
+def save_planes(planes, fileout):
+    """
+    save_planes saves a list with Plane elements in binary format
+    is '{num_of_planes} (8bytes) {normal_x} (4byters) {normal_y} (4byters) {normal_z} (4byters) {num_of_inliers} (8bytes)
+    {inlier_idx_1} (8bytes) ... {inlier_idx_n} (8bytes) {normal_x} (4byters) ...'
+    :param planes: list of elements of type Plane
+    :param fileout: the path for the output file
+    """
+    num_of_planes = len(planes)
+    with open(fileout, 'wb') as f:
+       data = struct.pack('Q', num_of_planes)
+       f.write(data)
+       for plane in planes:
+            num_inliers = len(plane.inliers)
+            format_str = '<3f {}Q'.format(num_inliers + 1)
+            data = struct.pack(format_str, *plane.normal, num_inliers, *plane.inliers)
+            f.write(data)
+
+def readPlanes(file: str):
+    """
+    readPlanes reads a from a binary file a plane. The format of the plane 
+    is '{num_of_planes} (8bytes) {normal_x} (4byters) {normal_y} (4byters) {normal_z} (4byters) {num_of_inliers} (8bytes)
+    {inlier_idx_1} (8bytes) ... {inlier_idx_n} (8bytes) {normal_x} (4byters) ...'
+    :param file: the path for the file
+    :return: list of elements of type Plane
+    """
+    planes = []
+    with open(file, 'rb') as f:
+        # Read the number of circles and planes
+        numPlanes, = struct.unpack('Q', f.read(8))
+        # Read each plane
+        for i in range(numPlanes):
+            plane = Plane()
+            plane.normal = struct.unpack('<3f', f.read(12))
+            numInliers = struct.unpack('<Q', f.read(8))[0]
+            format_str = '{}Q'.format(numInliers)
+            plane.inliers = list(struct.unpack(format_str, f.read(numInliers * 8)))
+            planes.append(plane)
+    return planes
+
+def visualize_planes(pcl, planes):
+    ax = plt.subplot(1, 1, 1, projection='3d')
+    for plane in planes:
+        ax.scatter(pcl[plane.inliers, 0], pcl[plane.inliers, 1], pcl[plane.inliers, 2])
+        ax.quiver(pcl[plane.inliers, 0].mean(), pcl[plane.inliers, 1].mean(), pcl[plane.inliers, 2].mean(), plane.normal[0], plane.normal[1], plane.normal[2], length=1)
+    plt.show()

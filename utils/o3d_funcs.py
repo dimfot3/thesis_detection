@@ -5,7 +5,6 @@ import pandas as pd
 import os
 from scipy.spatial.transform import Rotation as rot_mat
 
-
 def load_pcl(pcl_path):
     """
     load_pcl is loading a .pcd file as open3d Pointcloud
@@ -37,7 +36,10 @@ def pcl_voxel(pcd, voxel_size=0.1):
     :param voxel_size: The size of the output points of the voxelized point cloud.
     :return: The voxelized point cloud.
     """
-    voxeld_pcd = pcd.voxel_down_sample(voxel_size)
+    if type(pcd) != type(np.ndarray((1,1))):
+        voxeld_pcd = pcd.voxel_down_sample(voxel_size)
+    else:
+        voxeld_pcd = o3d_to_numpy(numpy_to_o3d(pcd).voxel_down_sample(voxel_size))
     return voxeld_pcd
 
 def numpy_to_o3d(pcl):
