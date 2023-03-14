@@ -42,9 +42,6 @@ def get_pcl_plane_annot(pcl_path, annot_path):
         planes.append(Plane(plane_in, normals[i]))
     return planes
 
-
-
-
 # planes = get_pcl_plane_annot('../datasets/plane_detection_dataset/jrdb3.bin', '../datasets/jrdb3.e57')
 
 # planes = readPlanes('../datasets/plane_detection_dataset/museum_ground_truth.bin')
@@ -54,9 +51,6 @@ def get_pcl_plane_annot(pcl_path, annot_path):
 # # save_planes(planes, '../datasets/plane_detection_dataset/jrdb3_ground_truth.bin')
 # visualize_planes(pcl, planes)
 #plot_plane_area(pcl, planes, areas)
-
-
-
 def create_cubic_pcl(width, height, depth, num_points, std_noise):
         # Generate random points on the surface of the cube
         points = []

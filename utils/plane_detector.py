@@ -8,6 +8,8 @@ from functools import reduce
 import struct
 import ezdxf
 from scipy.spatial import ConvexHull
+from RobustNormalEstimation import robustNormalEstimation
+
 
 class Plane:
     """
@@ -279,5 +281,4 @@ def plot_plane_area(pcl, planes, areas):
         # ax.quiver(pcl[planes[i].inliers, 0].mean(), pcl[planes[i].inliers, 1].mean(), pcl[planes[i].inliers, 2].mean(),\
         #            planes[i].normal[0], planes[i].normal[1], planes[i].normal[2], length=1.5, linewidths=5)
         inlier_max = np.max([inlier_max, np.abs(pcl[planes[i].inliers]).max()])
-
     plt.show()
