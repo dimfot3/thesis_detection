@@ -2,7 +2,7 @@ import pye57
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.neighbors import KDTree
-from plane_detector import Plane, save_planes, readPlanes, visualize_planes
+from plane_detector import Plane, save_planes, readPlanes, visualize_planes, compute_convex_hull_on_plane, plot_plane_area
 
 def get_pcl_plane_annot(pcl_path, annot_path):
     # Open E57 file
@@ -47,17 +47,54 @@ def get_pcl_plane_annot(pcl_path, annot_path):
 
 # planes = get_pcl_plane_annot('../datasets/plane_detection_dataset/jrdb3.bin', '../datasets/jrdb3.e57')
 
-# # planes = readPlanes('../datasets/plane_detection_dataset/bedroom16_ground_truth.bin')
+# planes = readPlanes('../datasets/plane_detection_dataset/museum_ground_truth.bin')
 
-# pcl = np.fromfile('../datasets/plane_detection_dataset/jrdb3.bin', dtype='float32').reshape(-1, 4)[:, :3]
-# save_planes(planes, '../datasets/plane_detection_dataset/jrdb3_ground_truth.bin')
+# pcl = np.fromfile('../datasets/plane_detection_dataset/museum.bin', dtype='float32').reshape(-1, 4)[:, :3]
+# areas = compute_convex_hull_on_plane(pcl, planes)
+# # save_planes(planes, '../datasets/plane_detection_dataset/jrdb3_ground_truth.bin')
 # visualize_planes(pcl, planes)
+#plot_plane_area(pcl, planes, areas)
 
 
 
+def create_cubic_pcl(width, height, depth, num_points, std_noise):
+        # Generate random points on the surface of the cube
+        points = []
+        planes = [Plane(inliers=[], normal=[-1, 0, 0]), Plane(inliers=[], normal=[1, 0, 0]), Plane(inliers=[], normal=[0, -1, 0]), \
+                  Plane(inliers=[], normal=[0, 1, 0]), Plane(inliers=[], normal=[0, 0, 1]), Plane(inliers=[], normal=[0, 0, -1])]
+        for i in range(num_points):
+            # Randomly choose a face of the cube
+            face = np.random.choice(['left', 'right', 'bottom', 'top', 'front', 'back'])
+            # Generate a random point on the chosen face
+            if face == 'left':
+                idx = 0
+                point = np.array([-width/2, np.random.uniform(-height/2, height/2), np.random.uniform(-depth/2, depth/2)])
+            elif face == 'right':
+                idx = 1
+                point = np.array([width/2, np.random.uniform(-height/2, height/2), np.random.uniform(-depth/2, depth/2)])
+            elif face == 'bottom':
+                idx = 2
+                point = np.array([np.random.uniform(-width/2, width/2), -height/2, np.random.uniform(-depth/2, depth/2)])
+            elif face == 'top':
+                idx = 3
+                point = np.array([np.random.uniform(-width/2, width/2), height/2, np.random.uniform(-depth/2, depth/2)])
+            elif face == 'front':
+                idx = 4
+                point = np.array([np.random.uniform(-width/2, width/2), np.random.uniform(-height/2, height/2), depth/2])
+            else:
+                idx = 5
+                point = np.array([np.random.uniform(-width/2, width/2), np.random.uniform(-height/2, height/2), -depth/2])
+            points.append(point)
+            planes[idx].inliers.append(i)
+        # Convert the list of points to a NumPy array
+        points = np.array(points) - std_noise + np.random.rand(num_points, 3) * std_noise/2
+        points = np.append(points, np.zeros((points.shape[0], 1), dtype='float32'), axis=1)
+        return points.astype('float32'), planes
 
-
-
+points, planes = create_cubic_pcl(4, 4, 3, 8000, 0.3)
+points.tofile('../datasets/plane_detection_dataset/box.bin')
+visualize_planes(points, planes)
+save_planes(planes, '../datasets/plane_detection_dataset/box_ground_truth.bin')
 # def write_ply_file(points, filename):
 #     """
 #     Write a PLY file with x,y,z,intensity data.
@@ -75,5 +112,5 @@ def get_pcl_plane_annot(pcl_path, annot_path):
 #         # Write points
 #         for point in points:
 #             f.write('{} {} {} {}\n'.format(point[0], point[1], point[2], point[3]))
-# points, filename = np.fromfile('../datasets/plane_detection_dataset/jrdb3.bin', dtype='float32').reshape(-1, 4), '../datasets/plane_detection_dataset/jrdb3.ply'
+# points, filename = np.fromfile('../datasets/plane_detection_dataset/bedroom64.bin', dtype='float32').reshape(-1, 4), '../datasets/plane_detection_dataset//bedroom64.ply'
 # write_ply_file(points, filename)

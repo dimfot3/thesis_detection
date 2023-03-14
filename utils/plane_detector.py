@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from functools import reduce
 import struct
 import ezdxf
-
+from scipy.spatial import ConvexHull
 
 class Plane:
     """
@@ -245,7 +245,39 @@ def readPlanes(file: str):
 
 def visualize_planes(pcl, planes):
     ax = plt.subplot(1, 1, 1, projection='3d')
+    #ax.scatter(pcl[:, 0], pcl[:, 1], pcl[:, 2], c='black')
     for plane in planes:
         ax.scatter(pcl[plane.inliers, 0], pcl[plane.inliers, 1], pcl[plane.inliers, 2])
         ax.quiver(pcl[plane.inliers, 0].mean(), pcl[plane.inliers, 1].mean(), pcl[plane.inliers, 2].mean(), plane.normal[0], plane.normal[1], plane.normal[2], length=1)
+    plt.show()
+
+def project_points_to_plane(pcl, plane):
+    points = pcl[plane.inliers]
+    plane_center = pcl[plane.inliers].mean(axis=0)
+    plane_normal = np.array(plane.normal)
+    projection = np.dot(points - plane_center, plane_normal)[:, np.newaxis] * plane_normal
+    projected_points = points - projection
+    return projected_points
+
+def compute_convex_hull_on_plane(pcl, planes):
+    areas = []
+    for plane in planes:
+        projected_points = project_points_to_plane(pcl, plane)
+        hull = ConvexHull(projected_points[:, :2])
+        areas.append(projected_points[hull.vertices])
+    return areas
+
+def plot_plane_area(pcl, planes, areas):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    #ax.scatter(pcl[:, 0], pcl[:, 1], pcl[:, 2])
+    inlier_max, inlier_min = 0, 0
+    for i, area in enumerate(areas):
+        ax.plot_trisurf(area[:, 0], area[:, 1], area[:, 2])
+        ax.scatter(pcl[planes[i].inliers, 0], pcl[planes[i].inliers, 1], pcl[planes[i].inliers, 2])
+        ax.scatter(pcl[planes[i].inliers, 0], pcl[planes[i].inliers, 1], pcl[planes[i].inliers, 2])
+        # ax.quiver(pcl[planes[i].inliers, 0].mean(), pcl[planes[i].inliers, 1].mean(), pcl[planes[i].inliers, 2].mean(),\
+        #            planes[i].normal[0], planes[i].normal[1], planes[i].normal[2], length=1.5, linewidths=5)
+        inlier_max = np.max([inlier_max, np.abs(pcl[planes[i].inliers]).max()])
+
     plt.show()
