@@ -45,6 +45,8 @@ def compute_local_pca(pointcloud, radius, min_p=10):
     for i in range(num_points):
         # Find the nearest neighbors within a certain radius
         neighbors_idx = tree.query_radius(pointcloud[i, :3].reshape(1, -1), r=radius)[0]
+        #_, neighbors_idx = tree.query(pointcloud[i, :3].reshape(1, -1), k=20)
+        neighbors_idx = neighbors_idx.reshape(-1, )
         if(np.unique(pointcloud[neighbors_idx], axis=0).shape[0] < min_p):
             continue
         # Extract the local point cloud and center it around the current point
@@ -165,33 +167,27 @@ def pca_plane_det(pcl, pca_radius=0.5, distmin=0.5, minp=15, ransac_iter=100, ra
     plane_normals = []
     for region in regions:
         inliers, plane_normal = estimate_plane_ransac(pcl[region], ransac_iter, ransac_thres)
+        if(np.sum(inliers)/len(region) < 0.5):
+            continue
         plane_inliers.append(region[inliers])
         plane_normals.append(plane_normal)
     return plane_inliers, plane_normals
 
-def points_near_line_segment(points, p1, p2):
-    # Calculate the line segment vector and its length squared
-    v = p2 - p1
-    len2 = np.sum(v**2)
-    # If the length of the line segment is very small, return an empty array
-    if len2 < 1e-8:
-        return np.array([])
-    # Calculate the parameter values along the line segment for each point
-    params = np.dot(points - p1, v) / len2
-    # Find the points whose parameter values are between 0 and 1
-    mask = (params >= 0) & (params <= 1)
-    # Calculate the minimum distance between each near point and the line segment
-    dists = np.abs(np.cross(v, points - p1)) / np.sqrt(len2)
-    dists[~mask] = np.inf
-    return dists
-
-def get_wall_points(pcl, lines, dthresh):
-    accumulator = np.zeros((pcl.shape[0], len(lines)))
-    for i, line in enumerate(lines):
-        accumulator[:, i] = points_near_line_segment(pcl[:, :2], line[:2], line[2:4])
-    min_dists = np.min(accumulator, axis=1)
-    points_wall = min_dists <= dthresh
-    return points_wall
+def pca_w_outlier_plane_det(pcl, distmin=0.5, minp=15, ransac_iter=100, ransac_thres=0.1):
+    eigv = robustNormalEstimation(pcl, k=20)
+    classes = classify_points(eigv)
+    regions, class_regions = generate_regions(pcl, classes, distmin, minp)
+    filter_idxs = np.argwhere(class_regions >= 0).reshape(-1, )
+    regions = [regions[i] for i in filter_idxs]
+    plane_inliers = []
+    plane_normals = []
+    for region in regions:
+        inliers, plane_normal = estimate_plane_ransac(pcl[region], ransac_iter, ransac_thres)
+        if(np.sum(inliers)/len(region) < 0.5):
+            continue
+        plane_inliers.append(region[inliers])
+        plane_normals.append(plane_normal)
+    return plane_inliers, plane_normals
 
 def read_gr_lines(fpath):
     # Open the DXF file
