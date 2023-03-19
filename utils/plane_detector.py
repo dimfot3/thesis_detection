@@ -5,6 +5,7 @@ from sklearn.linear_model import RANSACRegressor, LinearRegression
 from scipy.spatial.distance import cdist
 import matplotlib.pyplot as plt
 from functools import reduce
+from o3d_funcs import pcl_voxel
 import struct
 import ezdxf
 from scipy.spatial import ConvexHull
@@ -58,7 +59,7 @@ def compute_local_pca(pointcloud, radius, min_p=10):
         # Store the eigenvectors and eigenvalues of the PCA
         dot_product = np.sign(np.dot(-pointcloud[i, :3], normal_verctor))
         eigenvectors[i, :] = normal_verctor if dot_product >= 0 else -normal_verctor
-        eigenvalues[i] = np.min(pca.explained_variance_)
+        eigenvalues[i] = np.min(pca.explained_variance_) / np.sum(pca.explained_variance_)
     return eigenvectors, eigenvalues
 
 def classify_points(point_vectors):
@@ -278,3 +279,13 @@ def plot_plane_area(pcl, planes, areas):
         #            planes[i].normal[0], planes[i].normal[1], planes[i].normal[2], length=1.5, linewidths=5)
         inlier_max = np.max([inlier_max, np.abs(pcl[planes[i].inliers]).max()])
     plt.show()
+
+def gr_planes_voxel(pcl, gr_planes, voxel_size=0.1):
+    new_planes = []
+    for gr_plane in gr_planes:
+        pcl_down = pcl_voxel(pcl, voxel_size)
+        tree = KDTree(pcl_down)
+        _, ind = tree.query(pcl[gr_plane.inliers], k=1)
+        new_idxs = np.unique(ind.reshape(-1, ))
+        new_planes.append(Plane(list(new_idxs), gr_plane.normal))
+    return new_planes
