@@ -38,36 +38,37 @@ class robustNormalEstimator:
     def robustNormalEstimation(self, points, k=10):
         tree = KDTree(points)
         normals = np.zeros((points.shape[0], 3))
-        density = np.zeros((points.shape[0], ))
+        distances = np.zeros((points.shape[0], ))
         eigv_ratio = np.zeros((points.shape[0], )) + 1
         for i, point in enumerate(points):
             dists, neib_idxs = tree.query([point], k=k)
-            density[i] = dists.mean()
+            distances[i] = np.median(dists)
             neib_idxs = neib_idxs.reshape(-1, )
             #neib_idxs = neib_idxs[neib_idxs != i]
             neibs_set = points[neib_idxs]
             neib_sub, plane_nrm = self.get_max_con_sub(neibs_set)
             filtered_neibs = self.remove_outlier(neibs_set, neib_sub, plane_nrm) - point
-            if filtered_neibs.shape[0] < 3:
+            if filtered_neibs.shape[0] < 5:
                 continue
             pca = PCA(n_components=3)
             pca.fit(filtered_neibs)        
             normals[i, :] = pca.components_[np.argmin(pca.explained_variance_)]
             eigv_ratio[i] = np.min(pca.explained_variance_) / np.sum(pca.explained_variance_)
-        return normals, density, eigv_ratio
+        return normals, distances, eigv_ratio
 
 class customDetector:
     def __init__(self):
-        self.k = 10
-        self.sim_th = 0.7
+        self.k = 15
+        self.sim_th = 0.95
+        self.cand_score = 0.01
         self.rpca = robustNormalEstimator()
     
     def detectPlanes(self, pcl):
-        normals, density, eigv_ratio = self.rpca.robustNormalEstimation(pcl, self.k)
+        normals, dists, eigv_ratio = self.rpca.robustNormalEstimation(pcl, self.k)
         #normals, eigv_ratio = compute_local_pca(pcl, 0.6, min_p=10)
         direc = np.sum(-pcl * normals)
         normals[direc < 0] *= -1
-        groups, uncls = self.generateRegions(pcl, normals, eigv_ratio)
+        groups, uncls = self.generateRegions(pcl, normals, eigv_ratio, dists)
         return groups
         
     def normal_test(self, group, cands):
@@ -77,34 +78,39 @@ class customDetector:
         similarities = np.abs(np.dot(cands, group_normal)).reshape(-1, )
         return similarities > self.sim_th
 
-    def points_plane_test(self, group_points, group_normals, cands_points):
-        group_normal = np.median(group_normals, axis=0).reshape(3, 1)
-        group_normal = group_normal / (np.linalg.norm(group_normal) + 1e-10)
-        group_center = np.median(group_points, axis=0)
-        projection_group = np.abs(np.dot(group_points - group_center, group_normal).reshape(-1, ))
-        projection_cand = np.abs(np.dot(cands_points - group_center, group_normal).reshape(-1, ))
-        rz_scores = np.abs((projection_cand - np.median(projection_group))) / (1.4826 * np.median(np.abs(projection_cand - np.median(projection_group))))
-        return rz_scores < 2.5
+    # def points_plane_test(self, group_points, group_normals, cands_points):
+    #     group_normal = np.median(group_normals, axis=0).reshape(3, 1)
+    #     group_normal = group_normal / (np.linalg.norm(group_normal) + 1e-10)
+    #     group_center = np.median(group_points, axis=0)
+    #     projection_group = np.abs(np.dot(group_points - group_center, group_normal).reshape(-1, ))
+    #     projection_cand = np.abs(np.dot(cands_points - group_center, group_normal).reshape(-1, ))
+    #     rz_scores = np.abs((projection_cand - np.median(projection_group))) / (1.4826 * np.median(np.abs(projection_group - np.median(projection_group))))
+    #     return rz_scores < 2.5
 
-    def generateRegions(self, pcl, normals, eigv_ratio):
-        uncls = np.argsort(eigv_ratio)
-        uncls = np.array([i for i in uncls if (np.abs(normals[i]).sum() > 0) and (eigv_ratio[i] < 0.01)])
+    def generateRegions(self, pcl, normals, eigv_ratio, distances):
+        uncls = np.array([i for i in range(pcl.shape[0]) if (np.abs(normals[i]).sum() > 0) and (eigv_ratio[i] < self.cand_score)])
+        uncls = np.argsort(distances)
         groups = []
         while uncls.shape[0] > self.k:
             new_group = np.array([uncls[0]])
             uncls = np.delete(uncls, 0)
-            tree = KDTree(pcl[uncls])
-            dists, _ = tree.query(pcl[new_group], k=self.k)
-            while uncls.shape[0] > 0:
+            #tree = KDTree(pcl[uncls])
+            dists_accum = np.array([], dtype=float)
+            while uncls.shape[0] > self.k:
                 tree = KDTree(pcl[uncls])
-                neibs = np.unique(np.concatenate(tree.query_radius(pcl[new_group], r=0.8)).reshape(-1, ))
-                if neibs.shape[0] == 0: break
+                dists, neibs = tree.query(pcl[new_group], k=self.k)
+                dists, neibs = dists.reshape(-1, ), neibs.reshape(-1, )
+                neibs_un = np.unique(neibs).astype('int')
+                dists_un = np.array([dists[neibs.astype('int') == neibs_cand][0] for neibs_cand in neibs_un])
+                dists_accum = np.append(dists_accum, dists_un)
+                # neibs = np.unique(np.concatenate(tree.query(pcl[new_group], k=self.k)[1]).reshape(-1, ))
+                if neibs_un.shape[0] == 0: break
+                neibs = neibs_un[dists_un < np.quantile(dists_accum, 0.4)]
                 normal_t = self.normal_test(normals[new_group].reshape(-1, 3), normals[uncls[neibs]].reshape(-1, 3))
-                points_plane_t = self.points_plane_test(pcl[new_group].reshape(-1, 3), normals[new_group].reshape(-1, 3),
-                                                         pcl[uncls[neibs]].reshape(-1, 3))
-                new_group = np.append(new_group, uncls[neibs[normal_t & points_plane_t]])
-                uncls = np.delete(uncls, neibs[normal_t & points_plane_t])
-                if (not (normal_t & points_plane_t).sum()): break
+                #points_plane_t = self.normal_test(normals[new_group].reshape(-1, 3), normals[uncls[neibs]].reshape(-1, 3))
+                new_group = np.append(new_group, uncls[neibs[normal_t]])
+                uncls = np.delete(uncls, neibs[normal_t])
+                if (not (normal_t).sum()): break
             if(len(new_group) > self.k): groups.append(new_group)
         return groups, uncls
 
@@ -113,12 +119,15 @@ if __name__ == '__main__':
     pcl = pcl[np.linalg.norm(pcl, axis=1)<20, :]
     #rot_mat = Rotation.from_euler('xyz', [45, 0, 0]).as_matrix()
     #pcl = np.dot(pcl, rot_mat.T)
-    pcl = pcl_voxel(pcl, 0.2)
+    pcl = pcl_voxel(pcl, 0.1)
     det = customDetector()
     groups = det.detectPlanes(pcl)
     ax = plt.subplot(1, 1, 1, projection='3d')
     for group in groups:
+        # ax = plt.subplot(1, 1, 1, projection='3d')
         ax.scatter(pcl[group, 0], pcl[group, 1], pcl[group, 2])
+        ax.scatter(pcl[group[0], 0], pcl[group[0], 1], pcl[group[0], 2], s=100)
+        # plt.show()
     plt.show()
 
     
