@@ -64,7 +64,7 @@ class robustNormalEstimator:
 class customDetector:
     def __init__(self):
         self.k = 10
-        self.sim_th = 0.95
+        self.sim_th = 0.90
         self.cand_score = 0.01
         self.rpca = robustNormalEstimator()
     
@@ -111,7 +111,7 @@ class customDetector:
             while uncls.shape[0] > self.k:
                 tree = KDTree(pcl[uncls])
                 if len(new_group) > 1:
-                    radius = np.median(distances[new_group]) + 3 * 1.4826 * np.median(distances[new_group] - np.abs(np.median(distances[new_group])))
+                    radius = np.median(distances[new_group]) + 2.5 * 1.4826 * np.median(distances[new_group] - np.abs(np.median(distances[new_group])))
                     neibs = np.unique(np.concatenate(tree.query_radius(pcl[new_group], r=radius)).reshape(-1, ))
                 else:
                     neibs = tree.query(pcl[new_group], k=self.k)[1].reshape(-1, )

@@ -172,7 +172,8 @@ def pca_plane_det(pcl, pca_radius=0.5, distmin=0.5, minp=15, ransac_iter=100, ra
             continue
         plane_inliers.append(region[inliers])
         plane_normals.append(plane_normal)
-    return plane_inliers, plane_normals
+    det_planes = [Plane(plane, normal) for plane, normal in zip(plane_inliers, plane_normals)]
+    return det_planes
 
 def pca_w_outlier_plane_det(pcl, distmin=0.5, minp=15, ransac_iter=100, ransac_thres=0.1):
     eigv = robustNormalEstimation(pcl, k=20)
