@@ -266,7 +266,8 @@ def compute_convex_hull_on_plane(pcl, planes):
         areas.append(projected_points[hull.vertices])
     return areas
 
-def plot_plane_area(pcl, planes, areas):
+def plot_plane_area(pcl, planes):
+    areas = compute_convex_hull_on_plane(pcl, planes)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     #ax.scatter(pcl[:, 0], pcl[:, 1], pcl[:, 2])
