@@ -9,7 +9,7 @@ import numpy as np
 
 
 class humanDBLoader(Dataset):
-    def __init__(self, data_path, pcl_len=2048):
+    def __init__(self, data_path, pcl_len=2048, move_center=False):
         pcl_files = [file.replace('.bin', '') for file in os.listdir(data_path + 'velodyne/')]
         label_files = [file.replace('.txt', '') for file in os.listdir(data_path + 'labels/')]
         labeled_pcls = np.intersect1d(pcl_files, label_files)
@@ -18,6 +18,10 @@ class humanDBLoader(Dataset):
         self.label_files = [file + '.txt' for file in labeled_pcls]
         self.label_cols = ['obs_angle', 'l', 'w', 'h', 'cx', 'cy', 'cz', 'rot_z', 'num_points']
         self.pcl_len = pcl_len
+        self.move_center = move_center
+        self.box_size = 5
+        self.overlap_pt = 0.4
+        self.voxel = 0.1
 
     def __len__(self):
         return len(self.pcl_files)
@@ -28,11 +32,12 @@ class humanDBLoader(Dataset):
         labels = pd.read_csv(self.data_path + 'labels/' + self.label_files[idx], sep=' ', header=None, names=self.label_cols)
         # transform the pcl and annotations
         # voxel downsample
-        pcl_voxeled = pcl_voxel(pcl, voxel_size=0.1)
-        annotations = get_point_annotations_kitti(pcl_voxeled, labels, points_min=100)
+        pcl_voxeled = pcl_voxel(pcl, voxel_size=self.voxel)
+        annotations = get_point_annotations_kitti(pcl_voxeled, labels, points_min=200)
         pcl_numpy = o3d_to_numpy(pcl_voxeled)
         # 3d tiling
-        splitted_pcl, splitted_ann, centers = split_3d_point_cloud_overlapping(pcl_numpy, annotations, 5, 0.2)
+        splitted_pcl, splitted_ann, centers = split_3d_point_cloud_overlapping(pcl_numpy, annotations, box_size=self.box_size, \
+            overlap_pt=self.overlap_pt, pcl_box_num=self.pcl_len, move_center=self.move_center, min_num_per_box=300)
         return splitted_pcl, splitted_ann, centers
 
 def custom_collate(batch):
@@ -57,12 +62,21 @@ def custom_collate(batch):
     return pcls_batched, annot_batched, centers_batched
 
 if __name__ == '__main__':
-    path = '/home/visitor3/workspace/Thesis/Thesis_Detection/datasets/datasets/JRDB/'
-    dataset = humanDBLoader(path)
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=1, collate_fn=custom_collate)
+    path = '/home/visitor3/workspace/Thesis/Thesis_Detection/datasets/JRDB/'
+    dataset = humanDBLoader(path, pcl_len=2048, move_center=True)
+    dataloader = DataLoader(dataset, batch_size=7, shuffle=True, num_workers=1, collate_fn=custom_collate)
+    human = []
+    no_human = []
     for pcls, annotations, centers in dataloader:
         for i in range((len(pcls))):
-            print(pcls[i].size())
+            #print(pcls[i].size())
+            human += [annotation.sum() / annotation.shape[0] for annotation in annotations[i]]
+            no_human += [(annotation.shape[0] - annotation.sum()) / annotation.shape[0] for annotation in annotations[i]]
             first_pcl = pcls[i][0].numpy()
-            first_annot = annotations[i][0].numpy().astype('bool')
-            plot_frame_annotation_kitti_v2(first_pcl, first_annot)
+            # first_annot = annotations[i][0].numpy().astype('bool')
+            # plot_frame_annotation_kitti_v2(first_pcl, first_annot)
+    import matplotlib.pyplot as plt
+    plt.hist(no_human, label='no human')
+    plt.hist(human, label='human')
+    plt.title('human')
+    plt.show()

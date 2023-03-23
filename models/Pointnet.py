@@ -58,22 +58,22 @@ class PointNetEncoder(torch.nn.Module):
 
     def forward(self, x):
         B, D, N = x.size()
-        trans = self.stn(x)
-        x = x.transpose(2, 1)
+        trans = self.stn(x)     
+        x = x.transpose(2, 1)       # B, N, D
         if D > 3:
             feature = x[:, :, 3:]
             x = x[:, :, :3]
         x = torch.bmm(x, trans)
         if D > 3:
             x = torch.cat([x, feature], dim=2)
-        x = x.transpose(2, 1)
+        x = x.transpose(2, 1)       # B, D, N
         x = self.relu(self.bn1(self.conv1(x)))
 
         if self.feature_transform:
             trans_feat = self.fstn(x)
-            x = x.transpose(2, 1)
+            x = x.transpose(2, 1)       # B, N, D
             x = torch.bmm(x, trans_feat)
-            x = x.transpose(2, 1)
+            x = x.transpose(2, 1)       # B, D, N
         else:
             trans_feat = None
 
@@ -81,9 +81,9 @@ class PointNetEncoder(torch.nn.Module):
         x = self.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
         x = torch.max(x, 2, keepdim=True)[0]
-        x = x.view(-1, 1024)
+        x = x.view(-1, 1024)            # global feature
         if self.global_feat:
-            return x, trans, trans_feat
+            return x
         else:
             x = x.view(-1, 1024, 1).repeat(1, 1, N)
             return torch.cat([x, pointfeat], 1), trans, trans_feat
@@ -138,7 +138,7 @@ class PointNetSeg(torch.nn.Module):
         x = self.relu(self.bn2(self.conv2(x)))
         x = self.relu(self.bn3(self.conv3(x)))
         x = self.conv4(x)
-        x = x.transpose(2,1).contiguous()
+        x = x.transpose(2,1).contiguous()           # (B, N, C)
         x = self.log_softmax(x.view(-1,self.k))
         x = x.view(batchsize, n_pts, self.k)
         return x, trans, trans_feat
@@ -159,6 +159,6 @@ if __name__ == '__main__':
     #x_rand = torch.Tensor(np.random.random((32, 1024, 3)) * 300).to(device=device)
     device = 'cuda:0'
     model = PointNetClass(10).to(device)
-    summary(model, (1024, 3))
+    summary(model, (2048, 3))
     model = PointNetSeg(1).to(device)
-    summary(model, (1024, 3))
+    summary(model, (2048, 3))

@@ -1,24 +1,24 @@
 lr: 0.001
 lr_decay: 0.5
 lr_step: 20
-lr_clip: 0.00001
+lr_clip: 0.000001
 feat_reg_eff: 0.001
 btch_momentum: 0.5
-btch_mom_decay: 0.5
-btch_mom_step: 20
+btch_max_epoch: 100
 l2coef: 0.0000001
 batch_size: 32
-epochs: 50
-
+epochs: 300
+input_size: 2048
 
 valid_per: 0.2
 test_per: 0.1
 device: 'cuda'
-valid_freq: 2
-stop_counter: 3
+valid_freq: 1
+stop_counter: 20
 save_model: false
 save_path: './results/'
 data_root_path: './datasets/JRDB/'
 init_weights: null
 session_name: test
-online: false
+online: true
+visualization: True
