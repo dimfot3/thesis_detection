@@ -2,14 +2,16 @@ import torch
 import os, sys
 sys.path.insert(0, '../')
 from torch.utils.data import Dataset, DataLoader
-from o3d_funcs import load_pcl, o3d_to_numpy, \
-get_point_annotations_kitti, pcl_voxel, split_3d_point_cloud_overlapping, plot_frame_annotation_kitti_v2
+from pcl_utils import load_pcl, get_point_annotations_kitti, split_3d_point_cloud_overlapping, \
+    plot_frame_annotation_kitti_v2, pcl_voxel
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+
 
 class humanDBLoader(Dataset):
-    def __init__(self, data_path, pcl_len=2048, move_center=False):
+    def __init__(self, data_path, pcl_len=2048, move_center=False, voxel=0.1):
         pcl_files = [file.replace('.bin', '') for file in os.listdir(data_path + 'velodyne/')]
         label_files = [file.replace('.txt', '') for file in os.listdir(data_path + 'labels/')]
         labeled_pcls = np.intersect1d(pcl_files, label_files)
@@ -21,7 +23,7 @@ class humanDBLoader(Dataset):
         self.move_center = move_center
         self.box_size = 5
         self.overlap_pt = 0.4
-        self.voxel = 0.1
+        self.voxel = voxel
 
     def __len__(self):
         return len(self.pcl_files)
@@ -34,7 +36,7 @@ class humanDBLoader(Dataset):
         # voxel downsample
         pcl_voxeled = pcl_voxel(pcl, voxel_size=self.voxel)
         annotations = get_point_annotations_kitti(pcl_voxeled, labels, points_min=200)
-        pcl_numpy = o3d_to_numpy(pcl_voxeled)
+        pcl_numpy = pcl_voxeled
         # 3d tiling
         splitted_pcl, splitted_ann, centers = split_3d_point_cloud_overlapping(pcl_numpy, annotations, box_size=self.box_size, \
             overlap_pt=self.overlap_pt, pcl_box_num=self.pcl_len, move_center=self.move_center, min_num_per_box=300)
@@ -62,22 +64,21 @@ def custom_collate(batch):
     return pcls_batched, annot_batched, centers_batched
 
 if __name__ == '__main__':
-    path = '/media/visitor3/DBStorage/Datasets/JRDB/KITTI_format/'
-    dataset = humanDBLoader(path, pcl_len=2048, move_center=True)
+    path = '../datasets/JRDB/'
+    dataset = humanDBLoader(path, pcl_len=2048, move_center=True, voxel=0.1)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=5, collate_fn=custom_collate)
     human = []
     no_human = []
     for pcls, annotations, centers in tqdm(dataloader, total=len(dataloader)):
         for i in range((len(pcls))):
-            #print(pcls[i].size())
-            # human += [annotation.sum() / annotation.shape[0] for annotation in annotations[i]]
-            # no_human += [(annotation.shape[0] - annotation.sum()) / annotation.shape[0] for annotation in annotations[i]]
-            first_pcl = pcls[i][0].numpy()
-            x = 1
-            first_annot = annotations[i][0].numpy().astype('bool')
-            plot_frame_annotation_kitti_v2(first_pcl, first_annot)
-    import matplotlib.pyplot as plt
-    plt.hist(no_human, label='no human')
-    plt.hist(human, label='human')
-    plt.title('human')
-    plt.show()
+            annot = annotations[i][0].detach().cpu().numpy().astype('bool')
+            pcl = pcls[i][0].detach().cpu().numpy()
+            ax = plt.subplot(1, 1, 1, projection='3d')
+            ax.scatter(pcl[~annot, 0], pcl[~annot, 1], pcl[~annot, 2], c='blue')
+            ax.scatter(pcl[annot, 0], pcl[annot, 1], pcl[annot, 2], c='red')
+            plt.show()
+    # import matplotlib.pyplot as plt
+    # plt.hist(no_human, label='no human')
+    # plt.hist(human, label='human')
+    # plt.title('human')
+    # plt.show()

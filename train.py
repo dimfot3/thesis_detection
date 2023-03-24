@@ -11,9 +11,8 @@ from tqdm import tqdm
 import wandb
 import yaml
 import sys
-from utils import o3d_funcs
 from utils.humanDBLoader import humanDBLoader, custom_collate
-from utils.o3d_funcs import plot_frame_annotation_kitti_v2
+from utils.pcl_utils import plot_frame_annotation_kitti_v2
 sys.path.insert(0, 'tests')
 
 
@@ -37,17 +36,18 @@ def train(traindata, args, validata=None):
             param_group['lr'] = lr
         momentum = args['btch_momentum'] + (0.99 - args['btch_momentum']) * min(epoch / args['btch_max_epoch'], 1.0)
         args['model'] = args['model'].apply(lambda x: bn_momentum_adjust(x, momentum))
-
         for batch_input, targets, centers in tqdm(train_loader, desc=f'Epoch {epoch}: '):
             for btch_idx in range(len(batch_input)):
                 args['optimizer'].zero_grad()
                 mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].type(torch.long).to(args['device'])
+                if mini_btch_input.size(0) < 2: continue
                 yout, trans, trans_feat = args['model'](mini_btch_input)
                 loss = args['loss'](yout.view(-1, 2), mini_btch_target.view(-1)) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
                 epoch_loss += loss.item()
                 loss.backward()
                 args['optimizer'].step()
                 data_evaluated += mini_btch_input.size(0)
+        if (data_evaluated == 0): continue
         epoch_log['Train loss'] = epoch_loss / data_evaluated
         print(f"Epoch {epoch} loss: {epoch_log['Train loss']}")
         # validation
@@ -70,7 +70,6 @@ def train(traindata, args, validata=None):
                 table = wandb.Table(data =[[epoch, *imgs]], columns=columns)
                 epoch_log['table_image'] = table
             wandb.log(epoch_log)
-            
     return best_val_loss, best_val_acc
 
 def validate(validdata, args, validata=None):
@@ -90,7 +89,7 @@ def validate(validdata, args, validata=None):
             if args['visualization'] and (np.random.rand() < 0.3) and len(imgs) < 3:
                 first_pcl = batch_input[btch_idx][0].detach().cpu().numpy()
                 first_annot = np.argmax(yout[0].view(-1, 2).detach().cpu().numpy(), axis=1).astype('bool')
-                imgs.append(plot_frame_annotation_kitti_v2(first_pcl, first_annot, return_image=True))
+                imgs.append(plot_frame_annotation_kitti_v2(first_pcl, first_annot))
     if len(imgs) < 3: imgs += [None] * (3 - len(imgs))
     val_loss, val_acc = val_loss / data_eval, val_acc / (data_eval * input_size)
     print(f'Validation loss: {val_loss}, accuracy {val_acc}')
@@ -111,7 +110,7 @@ def test(model, test_dataset):
 
 def main(args):
     # loading dataset and splitting to train, valid, test
-    dataset = humanDBLoader(args['data_root_path'], pcl_len=args['input_size'], move_center=True)
+    dataset = humanDBLoader(args['data_root_path'], pcl_len=args['input_size'], move_center=True, voxel=0.1)
     traindata, validata, testdata = random_split(dataset, [round(1 - args['valid_per'] - args['test_per'], 2), \
          args['valid_per'], args['test_per']])
     # loading model, optimizer, scheduler, loss func
@@ -125,10 +124,8 @@ def main(args):
     args['model'] = model
     args['loss'] = loss
     args['optimizer'] = optimizer
-    
     # training the model
     best_loss, best_acc = train(traindata, args, validata)
-
     # testing the model
     #testing_acc = test(model, testdata)
     return best_loss, best_acc
