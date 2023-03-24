@@ -119,7 +119,7 @@ def get_point_annotations_kitti(pcd, dflabels, points_min=300):
         if(dflabels['num_points'][i] < points_min):
             continue
         center = np.array([dflabels['cx'][i], dflabels['cy'][i], dflabels['cz'][i]])
-        r = rot_mat.from_euler('z', dflabels['rot_z'][i], degrees=False).as_matrix()
+        r = rot_mat.from_euler('z', -dflabels['rot_z'][i], degrees=False).as_matrix()
         size = np.array([dflabels['l'][i], dflabels['w'][i], dflabels['h'][i]])
         box3d = np.asarray(o3d.geometry.OrientedBoundingBox(center, r, size).get_box_points())
         minx, maxx = box3d[:, 0].min(), box3d[:, 0].max()
@@ -140,7 +140,7 @@ def merge_boxes(boxes, annots, k):
             current_box = np.append(current_box, box, axis=0)
             current_annot = np.append(current_annot, annot)
             current_sum += len(box)
-        else:
+        elif current_box.shape[0] > 0:
             merged_boxes.append(current_box)
             merged_annot.append(current_annot)
             current_box = box
@@ -158,7 +158,9 @@ def canonicalize_boxes(boxes, annots, k, move_center=False):
         centers.append(np.mean(box, axis=0))
     # normalize its dimension
     for i, (box, annot) in enumerate(zip(boxes, annots)):
-        if len(box) < k:
+        if(len(box) == 0):
+            print('here')
+        if (len(box) > 0) and (len(box) < k):
             randidxs = np.random.choice(box.shape[0], k - box.shape[0])
             boxes[i] = np.append(boxes[i], box[randidxs], axis=0)  - centers[i] * move_center
             annots[i] = np.append(annots[i], annot[randidxs])
@@ -205,7 +207,7 @@ def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl
                 points_in_box = pcd[mask]
                 annotations_in_box = annotations[mask]
                 # Add the box to the list if it contains any points
-                if points_in_box.shape[0] > min_num_per_box and ((annotations_in_box==True).any()):
+                if (points_in_box.shape[0] > min_num_per_box) and ((annotations_in_box==True).sum() > min_num_per_box * 0.08):
                     boxes.append(points_in_box)
                     annotations_splitted.append(annotations_in_box)
     boxes, annotations_splitted = merge_boxes(boxes, annotations_splitted, pcl_box_num)
@@ -352,8 +354,6 @@ def plot_frame_annotation_kitti_v2(pcl, annotations, return_image=False):
         image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         return wandb.Image(image)
-
-
 
 def first_person_plot_kitti(pcl_file, labels_file, fov_up=15, fov_down=-15, proj_H=20, proj_W=500, max_range=20):
     """

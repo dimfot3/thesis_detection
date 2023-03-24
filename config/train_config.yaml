@@ -15,10 +15,10 @@ test_per: 0.1
 device: 'cuda'
 valid_freq: 1
 stop_counter: 20
-save_model: false
+save_model: True
 save_path: './results/'
 data_root_path: './datasets/JRDB/'
 init_weights: null
-session_name: test
+session_name: 'v00.01'
 online: true
 visualization: True

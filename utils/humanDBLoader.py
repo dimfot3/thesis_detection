@@ -6,7 +6,7 @@ from o3d_funcs import load_pcl, o3d_to_numpy, \
 get_point_annotations_kitti, pcl_voxel, split_3d_point_cloud_overlapping, plot_frame_annotation_kitti_v2
 import pandas as pd
 import numpy as np
-
+from tqdm import tqdm
 
 class humanDBLoader(Dataset):
     def __init__(self, data_path, pcl_len=2048, move_center=False):
@@ -44,15 +44,15 @@ def custom_collate(batch):
     # Stack the boxes from each sample into a single tensor
     pcls_tiled = []
     annot_tiled = []
-    centers = []
-    for pcls, annotations, center in batch:
+    centers_tiled = []
+    for pcls, annotations, centers in batch:
         pcls_tiled += pcls
         annot_tiled += annotations
-        centers += center
+        centers_tiled += centers
     batched_idxs = np.array_split(np.arange(len(pcls_tiled)), np.ceil(len(pcls_tiled) / len(batch)))
     pcls_batched = [pcls_tiled[idxs[0]:(idxs[-1]+1)] for idxs in batched_idxs]
     annot_batched = [annot_tiled[idxs[0]:(idxs[-1]+1)] for idxs in batched_idxs]
-    centers_batched = [centers[idxs[0]:(idxs[-1]+1)] for idxs in batched_idxs]
+    centers_batched = [centers_tiled[idxs[0]:(idxs[-1]+1)] for idxs in batched_idxs]
     # transform to tensor
     for i, (pcl_arr, annot_arr) in enumerate(zip(pcls_batched, annot_batched)):
         batch_pcl_tensors = [torch.from_numpy(arr).unsqueeze(0).type(torch.float32) for arr in pcl_arr] 
@@ -62,19 +62,20 @@ def custom_collate(batch):
     return pcls_batched, annot_batched, centers_batched
 
 if __name__ == '__main__':
-    path = '/home/visitor3/workspace/Thesis/Thesis_Detection/datasets/JRDB/'
+    path = '/media/visitor3/DBStorage/Datasets/JRDB/KITTI_format/'
     dataset = humanDBLoader(path, pcl_len=2048, move_center=True)
-    dataloader = DataLoader(dataset, batch_size=7, shuffle=True, num_workers=1, collate_fn=custom_collate)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=5, collate_fn=custom_collate)
     human = []
     no_human = []
-    for pcls, annotations, centers in dataloader:
+    for pcls, annotations, centers in tqdm(dataloader, total=len(dataloader)):
         for i in range((len(pcls))):
             #print(pcls[i].size())
-            human += [annotation.sum() / annotation.shape[0] for annotation in annotations[i]]
-            no_human += [(annotation.shape[0] - annotation.sum()) / annotation.shape[0] for annotation in annotations[i]]
+            # human += [annotation.sum() / annotation.shape[0] for annotation in annotations[i]]
+            # no_human += [(annotation.shape[0] - annotation.sum()) / annotation.shape[0] for annotation in annotations[i]]
             first_pcl = pcls[i][0].numpy()
-            # first_annot = annotations[i][0].numpy().astype('bool')
-            # plot_frame_annotation_kitti_v2(first_pcl, first_annot)
+            x = 1
+            first_annot = annotations[i][0].numpy().astype('bool')
+            plot_frame_annotation_kitti_v2(first_pcl, first_annot)
     import matplotlib.pyplot as plt
     plt.hist(no_human, label='no human')
     plt.hist(human, label='human')

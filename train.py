@@ -24,7 +24,7 @@ torch.cuda.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 def train(traindata, args, validata=None):
-    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate)
+    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate, num_workers=5)
     best_val_loss, best_val_acc = 1e10, 0
     stop_counter =  0
     # train loop
@@ -74,12 +74,12 @@ def train(traindata, args, validata=None):
     return best_val_loss, best_val_acc
 
 def validate(validdata, args, validata=None):
-    train_loader = DataLoader(validdata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate)
+    valid_loader = DataLoader(validdata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate)
     val_loss, val_acc, data_eval = 0, 0, 0
     input_size = args['input_size']
     args['model'].eval()
     imgs = []
-    for batch_input, targets, centers in tqdm(train_loader, desc=f'Validation: '):
+    for batch_input, targets, centers in tqdm(valid_loader, desc=f'Validation: '):
         for btch_idx in range(len(batch_input)):
             mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].type(torch.long).to(args['device'])
             yout, trans, trans_feat  = args['model'](mini_btch_input)
@@ -138,7 +138,7 @@ if __name__ == '__main__':
         args = yaml.safe_load(file)
     if args['online']:
         wandb.init(
-            project="PointNetTest",
+            project="PointNet",
             name=args['session_name'],
             notes="This is a test",
             tags=["pointnet"],
