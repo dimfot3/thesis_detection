@@ -23,7 +23,7 @@ torch.cuda.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 def train(traindata, args, validata=None):
-    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate, num_workers=5)
+    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, num_workers=5)
     best_val_loss, best_val_acc = 1e10, 0
     stop_counter =  0
     # train loop
@@ -37,16 +37,15 @@ def train(traindata, args, validata=None):
         momentum = args['btch_momentum'] + (0.99 - args['btch_momentum']) * min(epoch / args['btch_max_epoch'], 1.0)
         args['model'] = args['model'].apply(lambda x: bn_momentum_adjust(x, momentum))
         for batch_input, targets, centers in tqdm(train_loader, desc=f'Epoch {epoch}: '):
-            for btch_idx in range(len(batch_input)):
-                args['optimizer'].zero_grad()
-                mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].type(torch.long).to(args['device'])
-                if mini_btch_input.size(0) < 2: continue
-                yout, trans, trans_feat = args['model'](mini_btch_input)
-                loss = args['loss'](yout.view(-1, 2), mini_btch_target.view(-1)) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
-                epoch_loss += loss.item()
-                loss.backward()
-                args['optimizer'].step()
-                data_evaluated += mini_btch_input.size(0)
+            args['optimizer'].zero_grad()
+            batch_input, targets = batch_input.to(args['device']), targets.type(torch.long).to(args['device'])
+            if batch_input.size(0) < 2: continue
+            yout, trans, trans_feat = args['model'](batch_input)
+            loss = args['loss'](yout.view(-1, 2), targets.view(-1)) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
+            epoch_loss += loss.item()
+            loss.backward()
+            args['optimizer'].step()
+            data_evaluated += batch_input.size(0)
         if (data_evaluated == 0): continue
         epoch_log['Train loss'] = epoch_loss / data_evaluated
         print(f"Epoch {epoch} loss: {epoch_log['Train loss']}")
@@ -73,44 +72,42 @@ def train(traindata, args, validata=None):
     return best_val_loss, best_val_acc
 
 def validate(validdata, args, validata=None):
-    valid_loader = DataLoader(validdata, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate)
+    valid_loader = DataLoader(validdata, batch_size=args['batch_size'], shuffle=True)
     val_loss, val_acc, data_eval = 0, 0, 0
     input_size = args['input_size']
     args['model'].eval()
     imgs = []
     for batch_input, targets, centers in tqdm(valid_loader, desc=f'Validation: '):
-        for btch_idx in range(len(batch_input)):
-            mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].type(torch.long).to(args['device'])
-            yout, trans, trans_feat  = args['model'](mini_btch_input)
-            loss = args['loss'](yout.view(-1, 2), mini_btch_target.view(-1))
-            val_loss += loss.item()
-            val_acc += (torch.argmax(yout.view(-1, 2), dim=1) == mini_btch_target.view(-1)).detach().cpu().numpy().sum()
-            data_eval += mini_btch_input.size(0)
-            if args['visualization'] and (np.random.rand() < 0.3) and len(imgs) < 3:
-                first_pcl = batch_input[btch_idx][0].detach().cpu().numpy()
-                first_annot = np.argmax(yout[0].view(-1, 2).detach().cpu().numpy(), axis=1).astype('bool')
-                imgs.append(plot_frame_annotation_kitti_v2(first_pcl, first_annot))
+        batch_input, targets = batch_input.to(args['device']), targets.type(torch.long).to(args['device'])
+        yout, trans, trans_feat  = args['model'](batch_input)
+        loss = args['loss'](yout.view(-1, 2), targets.view(-1))
+        val_loss += loss.item()
+        val_acc += (torch.argmax(yout.view(-1, 2), dim=1) == targets.view(-1)).detach().cpu().numpy().sum()
+        data_eval += batch_input.size(0)
+        if args['visualization'] and (np.random.rand() < 0.3) and len(imgs) < 3:
+            first_pcl = batch_input[0].detach().cpu().numpy()
+            first_annot = np.argmax(yout[0].view(-1, 2).detach().cpu().numpy(), axis=1).astype('bool')
+            imgs.append(plot_frame_annotation_kitti_v2(first_pcl, first_annot))
     if len(imgs) < 3: imgs += [None] * (3 - len(imgs))
     val_loss, val_acc = val_loss / data_eval, val_acc / (data_eval * input_size)
     print(f'Validation loss: {val_loss}, accuracy {val_acc}')
     return val_loss, val_acc, imgs
 
 def test(model, test_dataset):
-    test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=True, collate_fn=custom_collate)
+    test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=True)
     test_acc, data_eval = 0, 0
     model.eval()
     for batch_input, targets, centers in tqdm(test_loader, desc=f'Testing: '):
-        for btch_idx in range(len(batch_input)):
-            mini_btch_input, mini_btch_target = batch_input[btch_idx].to(args['device']), targets[btch_idx].type(torch.long).to(args['device'])
-            yout, trans, trans_feat  = args['model'](mini_btch_input)
-            test_acc += (torch.argmax(yout.view(-1, 2), dim=-1) == targets) / len(test_dataset)
-            data_eval += mini_btch_input.size(0)
+        batch_input, targets = batch_input.to(args['device']), targets.type(torch.long).to(args['device'])
+        yout, _, _  = args['model'](batch_input)
+        test_acc += (torch.argmax(yout.view(-1, 2), dim=1) == targets.view(-1)).sum() / (len(test_dataset) * args['input_size'])
+        data_eval += batch_input.size(0)
     print(f'Testing accuracy: {test_acc}')
     return test_acc
 
 def main(args):
     # loading dataset and splitting to train, valid, test
-    dataset = humanDBLoader(args['data_root_path'], pcl_len=args['input_size'], move_center=True, voxel=0.1)
+    dataset = humanDBLoader(args['data_root_path'])
     traindata, validata, testdata = random_split(dataset, [round(1 - args['valid_per'] - args['test_per'], 2), \
          args['valid_per'], args['test_per']])
     # loading model, optimizer, scheduler, loss func
@@ -127,7 +124,7 @@ def main(args):
     # training the model
     best_loss, best_acc = train(traindata, args, validata)
     # testing the model
-    #testing_acc = test(model, testdata)
+    testing_acc = test(model, testdata)
     return best_loss, best_acc
     
 if __name__ == '__main__':
