@@ -6,7 +6,7 @@ feat_reg_eff: 0.001
 btch_momentum: 0.5
 btch_max_epoch: 100
 l2coef: 0.0000001
-batch_size: 10
+batch_size: 32
 epochs: 300
 epoch_start: 9
 input_size: 2048

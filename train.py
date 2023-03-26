@@ -1,7 +1,6 @@
 import sys
 sys.path.insert(0, '../')
 sys.path.insert(0, './utils')
-import math
 import numpy as np
 import torch 
 from torch.utils.data import DataLoader
@@ -11,7 +10,7 @@ from tqdm import tqdm
 import wandb
 import yaml
 import sys
-from utils.humanDBLoader import humanDBLoader, custom_collate
+from utils.humanDBLoader import humanDBLoader
 from utils.pcl_utils import plot_frame_annotation_kitti_v2
 sys.path.insert(0, 'tests')
 
@@ -23,7 +22,7 @@ torch.cuda.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 def train(traindata, args, validata=None):
-    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, num_workers=4)
+    train_loader = DataLoader(traindata, batch_size=None, shuffle=True, pin_memory=True if (args['device']=='cuda') else False)
     best_val_loss, best_val_acc = 1e10, 0
     stop_counter =  0
     # train loop
@@ -72,7 +71,7 @@ def train(traindata, args, validata=None):
     return best_val_loss, best_val_acc
 
 def validate(validdata, args, validata=None):
-    valid_loader = DataLoader(validdata, batch_size=args['batch_size'], shuffle=True)
+    valid_loader = DataLoader(validdata, batch_size=None, shuffle=True)
     val_loss, val_acc, data_eval = 0, 0, 0
     input_size = args['input_size']
     args['model'].eval()
@@ -94,7 +93,7 @@ def validate(validdata, args, validata=None):
     return val_loss, val_acc, imgs
 
 def test(model, test_dataset):
-    test_loader = DataLoader(test_dataset, batch_size=args['batch_size'], shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=None, shuffle=True)
     test_acc, data_eval = 0, 0
     model.eval()
     for batch_input, targets, centers in tqdm(test_loader, desc=f'Testing: '):
@@ -107,9 +106,9 @@ def test(model, test_dataset):
 
 def main(args):
     # loading dataset and splitting to train, valid, test
-    dataset = humanDBLoader(args['data_root_path'])
+    dataset = humanDBLoader(args['data_root_path'], batch_size=args['batch_size'])
     traindata, validata, testdata = random_split(dataset, [round(1 - args['valid_per'] - args['test_per'], 2), \
-         args['valid_per'], args['test_per']])
+         args['valid_per'], args['test_per']])    
     # loading model, optimizer, scheduler, loss func
     model = PointNetSeg(2).to(args['device'])
     # loading weights for the model
