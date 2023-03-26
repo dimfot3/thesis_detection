@@ -112,8 +112,9 @@ def test(model, test_dataset):
     for batch_input, targets, centers in tqdm(test_loader, desc=f'Testing: '):
         batch_input, targets = batch_input.to(args['device']), targets.type(torch.long).to(args['device'])
         yout, _, _  = args['model'](batch_input)
-        test_acc +=  ((yout.view(-1) > 0.5) == (targets.view(-1)==1)).detach().cpu().numpy().sum() / (len(test_dataset) * args['input_size'])
+        test_acc +=  get_f1_score(targets.view(-1, args['input_size']), targets.view(-1, args['input_size']))
         data_eval += batch_input.size(0)
+    test_acc /= data_eval
     print(f'Testing accuracy: {test_acc}')
     return test_acc
 
@@ -136,7 +137,7 @@ def main(args):
     # training the model
     best_loss, best_acc = train(traindata, args, validata)
     # testing the model
-    # testing_acc = test(model, testdata)
+    testing_acc = test(model, testdata)
     return best_loss, best_acc
     
 if __name__ == '__main__':
