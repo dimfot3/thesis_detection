@@ -127,7 +127,7 @@ class PointNetSeg(torch.nn.Module):
         self.bn2 = torch.nn.BatchNorm1d(256)
         self.bn3 = torch.nn.BatchNorm1d(128)
         self.relu = torch.nn.ReLU()
-        self.log_softmax = torch.nn.LogSoftmax(dim=-1)
+        self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x):
         x = x.transpose(2, 1)       # from (B, N, D) to (B, D, N)
@@ -139,8 +139,8 @@ class PointNetSeg(torch.nn.Module):
         x = self.relu(self.bn3(self.conv3(x)))
         x = self.conv4(x)
         x = x.transpose(2,1).contiguous()           # (B, N, C)
-        x = self.log_softmax(x.view(-1,self.k))
-        x = x.view(batchsize, n_pts, self.k)
+        x = self.sigmoid(x.view(-1, self.k))
+        x = x.view(batchsize, n_pts)
         return x, trans, trans_feat
 
 def bn_momentum_adjust(m, momentum):
@@ -158,7 +158,7 @@ def feature_transform_reguliarzer(trans):
 if __name__ == '__main__':
     #x_rand = torch.Tensor(np.random.random((32, 1024, 3)) * 300).to(device=device)
     device = 'cuda:0'
-    model = PointNetClass(10).to(device)
+    model = PointNetClass(1).to(device)
     summary(model, (2048, 3))
     model = PointNetSeg(1).to(device)
     summary(model, (2048, 3))
