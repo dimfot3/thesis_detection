@@ -23,11 +23,11 @@ torch.cuda.manual_seed(random_seed)
 np.random.seed(random_seed)
 
 def train(traindata, args, validata=None):
-    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, num_workers=5)
+    train_loader = DataLoader(traindata, batch_size=args['batch_size'], shuffle=True, num_workers=4)
     best_val_loss, best_val_acc = 1e10, 0
     stop_counter =  0
     # train loop
-    for epoch in range(args['epochs']):
+    for epoch in range(args['epoch_start'], args['epochs']):
         args['model'].train()
         epoch_log, epoch_loss, data_evaluated, imgs = {}, 0, 0, []
         # Updating the training hyperparams

@@ -6,8 +6,9 @@ feat_reg_eff: 0.001
 btch_momentum: 0.5
 btch_max_epoch: 100
 l2coef: 0.0000001
-batch_size: 32
+batch_size: 10
 epochs: 300
+epoch_start: 9
 input_size: 2048
 
 valid_per: 0.2
@@ -17,8 +18,8 @@ valid_freq: 1
 stop_counter: 20
 save_model: True
 save_path: './results/'
-data_root_path: './datasets/JRDB/'
+data_root_path: '/media/visitor1/DBStorage/Datasets/JRDB/training_format/training_data.h5py'
 init_weights: null
 session_name: 'v00.01'
-online: true
+online: False
 visualization: True
