@@ -23,7 +23,7 @@ class humanDBLoader(Dataset):
         splitted_pcl, splitted_ann, centers = self.data_file['pcls'][start_idx:end_idx], \
                                         self.data_file['annotations'][start_idx:end_idx], \
                                         self.data_file['centers'][start_idx:end_idx]
-        return splitted_pcl, splitted_ann, centers
+        return splitted_pcl.astype('float32'), splitted_ann.astype('float32'), centers.astype('float32')
 
 
 if __name__ == '__main__':

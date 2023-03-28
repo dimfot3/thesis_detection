@@ -11,6 +11,7 @@ from o3d_funcs import plot_frame_annotation_kitti_v2, numpy_to_o3d
 import pandas as pd
 import hdbscan
 
+
 def load_pcl(pcl_path):
     """
     load_pcl is loading a .pcd file as open3d Pointcloud
@@ -33,17 +34,17 @@ def get_point_annotations_kitti(pcl, dflabels, points_min=300):
     annotations = np.zeros(pcl.shape[0], dtype='bool')
     boxes = []
     for i in range(dflabels.shape[0]):
-        if(dflabels['num_points'][i] < points_min):
-            continue
+        # if(dflabels['num_points'][i] < points_min):
+        #     continue
         center = np.array([dflabels['cx'][i], dflabels['cy'][i], dflabels['cz'][i]])
-        size = np.array([dflabels['w'][i], dflabels['l'][i], dflabels['h'][i]])
+        size = np.array([dflabels['w'][i], dflabels['l'][i], dflabels['h'][i]]) * 1.05
         trans_mat = np.zeros((4, 4))
-        trans_mat[:3, :3], trans_mat[:3, 3], trans_mat[3, 3] = Rotation.from_euler('xyz', [0, 0, -dflabels['rot_z'][i]]\
+        trans_mat[:3, :3], trans_mat[:3, 3], trans_mat[3, 3] = Rotation.from_euler('xyz', [0, 0, dflabels['rot_z'][i]]\
                                                                 , degrees=False).as_matrix(), center.reshape(-1, ), 1
         box_mesh = trimesh.creation.box(extents=size, transform=trans_mat)
         point_indices_inside_box = box_mesh.contains(pcl)
         annotations = annotations | point_indices_inside_box
-        boxes.append(box_mesh)
+        boxes.append(np.argwhere(point_indices_inside_box).reshape(-1, ))
     #plot_frame_annotation_kitti_v2(pcl, annotations)
     return annotations, boxes
 
@@ -132,64 +133,70 @@ def pcl_voxel(pcd, voxel_size=0.1):
     _, indices = tree.query(centers)
     return pcd[indices, :]
 
-
-def split_point_cloud(points, K):
-    # Cluster the points using HDBSCAN
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=30, prediction_data=True).fit(points)
+def check_cluster_valdity(cluster_points, core_indices, min_cluster_size=30, max_size=2):
+    tree = KDTree(cluster_points[core_indices])
+    dists, _ = tree.query(cluster_points[core_indices], k=2)
+    dists = dists[:, 1]
+    if (dists < max_size).sum() > min_cluster_size:
+        return True
+    return False
+from time import time
+def split_point_cloud_adaptive_training(points, annot_labels, K, min_cluster_size=30, max_size_core=2, move_center=True, points_min=100):
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, prediction_data=True, cluster_selection_epsilon=0.2).fit(points)
     labels = clusterer.labels_
-    n_clusters = max(labels) + 1
-    
-    # Find the size of each cluster
-    cluster_sizes = np.zeros(n_clusters)
+    n_clusters = max(labels)
+    cluster_arr_idxs = []
+    tree = KDTree(points)
     for i in range(n_clusters):
-        cluster_sizes[i] = np.sum(labels == i)
-
-    # Sort the clusters by size (descending order)
-    sorted_clusters = np.argsort(cluster_sizes)[::-1]
-    # Initialize the new point cloud
-    new_points = np.empty((0, 3))
-    membeship = hdbscan.membership_vector(clusterer, points[:1000])
-    print(membeship.shape)
-    exit()
-    # Iterate over the clusters, adding points until K is reached
-    for i in sorted_clusters:
-        cluster_points = points[labels == i]
+        cluster_idxs = np.argwhere(labels == i).reshape(-1, )
+        cluster_points = points[cluster_idxs]
         n_points = cluster_points.shape[0]
-
-        # If the cluster has fewer than K points, add all of them
-        if n_points <= K:
-            new_points = np.concatenate((new_points, cluster_points))
-            # test_points = points[~(labels == i)]
-            # cluster_density = hdbscan.probability_density(cluster_points, single_linkage_tree)
-            # cluster_density.argsort()[::-1][0:K-n_points]
-        # If the cluster has more than K points, randomly subsample to get K points
-        else:
+        core_indices = clusterer.outlier_scores_[cluster_idxs] < 0.00001
+        test_bool = check_cluster_valdity(cluster_points, core_indices, min_cluster_size, max_size=max_size_core)       # filter out higly sparse clusters 
+        if not test_bool: continue
+        if n_points <= K:       # deal with less than K points
+            _, idxs = tree.query([np.median(cluster_points, axis=0)], k=K)
+            new_idxs = np.setdiff1d(idxs.reshape(-1, ), cluster_idxs)[:K-n_points]
+            cluster_idxs = np.concatenate((cluster_idxs, new_idxs))
+        else:                   # deal with more than K points
             subsample_indices = np.random.choice(n_points, size=K, replace=False)
-            subsample_points = cluster_points[subsample_indices, :]
-            new_points = np.concatenate((new_points, subsample_points))
-
-    return new_points[:K*n_clusters]
-
-
-
-
+            cluster_idxs = cluster_idxs[subsample_indices]
+        cluster_arr_idxs.append(cluster_idxs)
+    t0 = time()
+    # out_pcls = [points[idxs] for idxs in cluster_arr_idxs]
+    _, boxes = get_point_annotations_kitti(points, annot_labels, points_min=points_min)
+    t1 = time()
+    annotations = []
+    out_pcls = []
+    for cluster_idxs in cluster_arr_idxs:
+        curr_annot = np.zeros((cluster_idxs.shape[0], ), dtype='float32')
+        out_pcls.append(points[cluster_idxs])
+        for box in boxes:
+            com_idxs = np.intersect1d(cluster_idxs, box, return_indices=True)
+            if com_idxs[0].shape[0] == 0: continue
+            curr_annot[com_idxs[1]] = (com_idxs[0].shape[0] / len(box)) * (np.min([len(box) / points_min, 1]))
+        annotations.append(curr_annot)
+    t2 = time()
+    print(t2-t1, t1-t0)
+    centers = np.zeros((len(out_pcls), 3))
+    if move_center: 
+        out_pcls = [cluster  - np.mean(cluster, axis=0) for cluster in out_pcls]
+        centers = np.array([np.mean(cluster, axis=0) for cluster in out_pcls])
+    return out_pcls, annotations, centers
 
 
 if __name__ == '__main__':
-    pcl = load_pcl('../datasets/JRDB/velodyne/000000.bin')
-    pcl = pcl[np.linalg.norm(pcl, axis=1) < 15]
+    pcl = load_pcl('../datasets/JRDB/velodyne/000003.bin')
+    #pcl = pcl[np.linalg.norm(pcl, axis=1) < 15]
     label_cols = ['obs_angle', 'l', 'w', 'h', 'cx', 'cy', 'cz', 'rot_z', 'num_points']
-    labels = pd.read_csv('../datasets/JRDB/labels/000000.txt', sep=' ', header=None, names=label_cols)
+    labels = pd.read_csv('../datasets/JRDB/labels/000003.txt', sep=' ', header=None, names=label_cols)
     pcl_voxeled = pcl_voxel(pcl, voxel_size=0.1)
-    arr = split_point_cloud(pcl_voxeled, 2048)
-    # for label in np.unique(labels):
-    #     fig = plt.figure()
-    #     ax = fig.add_subplot(projection='3d')
-    #     ax.scatter(pcl_voxeled[labels == label, 0], pcl_voxeled[labels == label, 1], pcl_voxeled[labels == label, 2], label=f"Class {label}")
-    #     plt.show()
-    # plt.hist(labels)
-    # plt.show()
-    
-
-    # annotations, boxes = get_point_annotations_kitti(pcl_voxeled, labels, points_min=200)
-    # split_3d_point_cloud_overlapping(pcl_voxeled, annotations, 7, 0.4, pcl_box_num=4096, move_center=False, min_num_per_box=300)
+    out_pcls, annotations, centers = split_point_cloud_adaptive_training(pcl_voxeled, labels, 2048,
+                                                         min_cluster_size=30, max_size_core=1, move_center=True, points_min=100)
+    for i, (curr_pcl, curr_annot) in enumerate(zip(out_pcls, annotations)):
+        colors = np.zeros((curr_annot.shape[0], 3))
+        colors[:, 0] = curr_annot
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+        ax.scatter(curr_pcl[:, 0], curr_pcl[:, 1], curr_pcl[:, 2], c=colors)
+        plt.show()
