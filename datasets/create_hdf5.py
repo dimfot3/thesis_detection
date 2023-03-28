@@ -9,7 +9,6 @@ sys.path.insert(0, '../utils/')
 from pcl_utils import load_pcl, get_point_annotations_kitti, split_3d_point_cloud_overlapping, \
     plot_frame_annotation_kitti_v2, pcl_voxel
 
-
 def get_file_names(data_path):
     pcl_files = [file.replace('.bin', '') for file in os.listdir(data_path + 'velodyne/')]
     label_files = [file.replace('.txt', '') for file in os.listdir(data_path + 'labels/')]
@@ -55,21 +54,21 @@ def load_pointclouds_from_hdpy(filename):
     return pcls, annotations, centers
 
 
-preprocess_args = {'input_len': 2048, 
+preprocess_args = {'input_len': 4096, 
                     'voxel_down': 0.1, 
                     'move_center': True,
-                    'box_size': 5,
-                    'overlap_pt': 0.4
+                    'box_size': 9,
+                    'overlap_pt': 0.25
                     }
 
-save_pointclouds_to_hdpy('/media/visitor1/DBStorage/Datasets/JRDB/training_format/rtraining_dt.h5py', '/media/visitor1/DBStorage/Datasets/JRDB/KITTI_format/', compression='gzip', compression_level=6, preprocess_args=preprocess_args)
-# pcls, annotations, centers = load_pointclouds_from_hdpy('test.h5py')
-# print(annotations.shape, centers.shape)
-# for i in range(pcls.shape[0]):
-#     center =  centers[i].reshape(1, 3)
-#     pcl = pcls[i]
-#     annot = annotations[i]
-#     ax = plt.subplot(1, 1, 1, projection='3d')
-#     ax.scatter(pcl[~annot, 0], pcl[~annot, 1], pcl[~annot, 2])
-#     ax.scatter(pcl[annot, 0], pcl[annot, 1], pcl[annot, 2])
-#     plt.show()
+save_pointclouds_to_hdpy('./JRDB/test_data.h5py', './JRDB/', compression='gzip', compression_level=6, preprocess_args=preprocess_args)
+pcls, annotations, centers = load_pointclouds_from_hdpy('test.h5py')
+print(annotations.shape, centers.shape)
+for i in range(pcls.shape[0]):
+    center =  centers[i].reshape(1, 3)
+    pcl = pcls[i]
+    annot = annotations[i]
+    ax = plt.subplot(1, 1, 1, projection='3d')
+    ax.scatter(pcl[~annot, 0], pcl[~annot, 1], pcl[~annot, 2])
+    ax.scatter(pcl[annot, 0], pcl[annot, 1], pcl[annot, 2])
+    plt.show()

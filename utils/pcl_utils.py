@@ -6,7 +6,10 @@ from matplotlib.figure import Figure
 from scipy.spatial import KDTree
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
-
+import trimesh
+from o3d_funcs import plot_frame_annotation_kitti_v2, numpy_to_o3d
+import pandas as pd
+import hdbscan
 
 def load_pcl(pcl_path):
     """
@@ -18,25 +21,6 @@ def load_pcl(pcl_path):
     pcd = np.fromfile(pcl_path, dtype='float32').reshape(-1, 4)[:, :3]
     return pcd
 
-def box_vertices_indices(center, rotationz, width, height, depth):
-    corners_local = np.array([
-        [-0.5*width, -0.5*height, -0.5*depth],
-        [-0.5*width,  0.5*height, -0.5*depth],
-        [ 0.5*width,  0.5*height, -0.5*depth],
-        [ 0.5*width, -0.5*height, -0.5*depth],
-        [-0.5*width, -0.5*height,  0.5*depth],
-        [-0.5*width,  0.5*height,  0.5*depth],
-        [ 0.5*width,  0.5*height,  0.5*depth],
-        [ 0.5*width, -0.5*height,  0.5*depth]
-    ])
-    rotation_matrix = Rotation.from_euler('xyz', [0, 0, rotationz], degrees=False).as_matrix()
-    corners_rotated = np.dot(corners_local, rotation_matrix.T)
-    corners_translated = corners_rotated + center.reshape(-1, 3)
-    vertex_indices_3d = np.zeros((8, 3), dtype=float)
-    for i in range(8):
-        vertex_indices_3d[i] = corners_translated[i]
-    return vertex_indices_3d
-
 def get_point_annotations_kitti(pcl, dflabels, points_min=300):
     """
     anotate_pcl is used for annotation of https://jrdb.erc.monash.edu/. The
@@ -47,61 +31,40 @@ def get_point_annotations_kitti(pcl, dflabels, points_min=300):
     :return: the 3d boxes as list of open3d.geometry.OrientedBoundingBox
     """
     annotations = np.zeros(pcl.shape[0], dtype='bool')
+    boxes = []
     for i in range(dflabels.shape[0]):
         if(dflabels['num_points'][i] < points_min):
             continue
         center = np.array([dflabels['cx'][i], dflabels['cy'][i], dflabels['cz'][i]])
-        size = np.array([dflabels['l'][i], dflabels['w'][i], dflabels['h'][i]])
-        box3d = box_vertices_indices(center, -dflabels['rot_z'][i], size[0], size[1], size[2])
-        minx, maxx = box3d[:, 0].min(), box3d[:, 0].max()
-        miny, maxy = box3d[:, 1].min(), box3d[:, 1].max()
-        minz, maxz = box3d[:, 2].min(), box3d[:, 2].max()
-        annotations = annotations | ((pcl[:, 0] > minx) & (pcl[:, 0] < maxx) & (pcl[:, 1] > miny) & \
-             (pcl[:, 1] < maxy) & (pcl[:, 2] > minz) & (pcl[:, 2] < maxz))
-    return annotations
+        size = np.array([dflabels['w'][i], dflabels['l'][i], dflabels['h'][i]])
+        trans_mat = np.zeros((4, 4))
+        trans_mat[:3, :3], trans_mat[:3, 3], trans_mat[3, 3] = Rotation.from_euler('xyz', [0, 0, -dflabels['rot_z'][i]]\
+                                                                , degrees=False).as_matrix(), center.reshape(-1, ), 1
+        box_mesh = trimesh.creation.box(extents=size, transform=trans_mat)
+        point_indices_inside_box = box_mesh.contains(pcl)
+        annotations = annotations | point_indices_inside_box
+        boxes.append(box_mesh)
+    #plot_frame_annotation_kitti_v2(pcl, annotations)
+    return annotations, boxes
 
-def canonicalize_boxes(boxes, annots, k, move_center=False):
+def canonicalize_boxes(pcl, boxes, k, move_center=False):
     # normalize its origins
     centers = []
+    pcl_tree = KDTree(pcl)
     for i, box in enumerate(boxes):
         centers.append(np.mean(box, axis=0))
-    # normalize its dimension
-    for i, (box, annot) in enumerate(zip(boxes, annots)):
-        if(len(box) == 0):
-            print('here')
+    for i, box in enumerate(boxes):
         if (len(box) > 0) and (len(box) < k):
-            randidxs = np.random.choice(box.shape[0], k - box.shape[0])
-            boxes[i] = np.append(boxes[i], box[randidxs], axis=0)  - centers[i] * move_center
-            annots[i] = np.append(annots[i], annot[randidxs])
+            dists, idxs = pcl_tree.query(box, k=2)
+            dists, idxs = dists[:, 1], idxs[:, 1]
+            rand_idxs = np.random.choice(idxs, k)
+            boxes[i] = np.append(boxes[i], pcl[rand_idxs], axis=0)  - centers[i] * move_center
         elif len(box) > k:
             rand_idxs = np.random.choice(box.shape[0], k)
             boxes[i] = box[rand_idxs] - centers[i] * move_center
-            annots[i] = annot[rand_idxs]
-    return boxes, annots, centers
+    return boxes, centers
 
-def merge_boxes(boxes, annots, k):
-    merged_boxes = []
-    merged_annot = []
-    current_box = np.array([]).reshape(-1, 3)
-    current_annot = np.array([], dtype='bool')
-    current_sum = 0
-    for box, annot in zip(boxes, annots):
-        if current_sum + len(box) <= k:
-            current_box = np.append(current_box, box, axis=0)
-            current_annot = np.append(current_annot, annot)
-            current_sum += len(box)
-        elif current_box.shape[0] > 0:
-            merged_boxes.append(current_box)
-            merged_annot.append(current_annot)
-            current_box = box
-            current_annot = annot
-            current_sum = len(box)
-    if current_box.shape[0] > 0:
-        merged_boxes.append(current_box)
-        merged_annot.append(current_annot)
-    return merged_boxes, merged_annot
-
-def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl_box_num=2048, move_center=False, min_num_per_box=300):
+def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl_box_num=2048, move_center=False, min_num_per_box=100):
     """
     Splits a 3D point cloud into overlapping boxes of a given size.
     :param pcd: numpy array of shape (N,3) containing the 3D point cloud
@@ -122,7 +85,7 @@ def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl
     num_boxes_z = int(np.ceil((range_z - box_size) / (box_size - overlap))) + 1
     # Initialize list of boxes
     boxes = []
-    annotations_splitted = []
+    annotations_arr = []
     # Loop over all boxes
     for i in range(num_boxes_x):
         for j in range(num_boxes_y):
@@ -138,26 +101,25 @@ def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl
                 points_in_box = pcd[mask]
                 annotations_in_box = annotations[mask]
                 # Add the box to the list if it contains any points
-                if (points_in_box.shape[0] > min_num_per_box) and ((annotations_in_box==True).sum() > min_num_per_box * 0.08):
+                if (points_in_box.shape[0] > min_num_per_box) and ((annotations_in_box==True).sum() > 0):
                     boxes.append(points_in_box)
-                    annotations_splitted.append(annotations_in_box)
-    boxes, annotations_splitted = merge_boxes(boxes, annotations_splitted, pcl_box_num)
-    boxes, annotations_splitted, centers = canonicalize_boxes(boxes, annotations_splitted, pcl_box_num, move_center)
-    return boxes, annotations_splitted, centers
+                    print(len(points_in_box))
+    boxes, centers = canonicalize_boxes(pcd, boxes, pcl_box_num, move_center)
+    return boxes, annotations_arr, centers
 
-def plot_frame_annotation_kitti_v2(pcl, annotations):
-    colors = ['red' if annot else 'blue' for annot in annotations]
-    fig = Figure()
-    canvas = FigureCanvas(fig)
-    ax = fig.gca()
-    ax.scatter(pcl[:, 0], pcl[:, 1], c=colors)
-    ax.axis('off')
-    fig.tight_layout(pad=0)
-    ax.margins(0)
-    fig.canvas.draw()
-    image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    return wandb.Image(image)
+# def plot_frame_annotation_kitti_v2(pcl, annotations):
+#     colors = ['red' if annot else 'blue' for annot in annotations]
+#     fig = Figure()
+#     canvas = FigureCanvas(fig)
+#     ax = fig.gca()
+#     ax.scatter(pcl[:, 0], pcl[:, 1], c=colors)
+#     ax.axis('off')
+#     fig.tight_layout(pad=0)
+#     ax.margins(0)
+#     fig.canvas.draw()
+#     image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+#     image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+#     return wandb.Image(image)
 
 def pcl_voxel(pcd, voxel_size=0.1):
     min_coords = np.min(pcd, axis=0)
@@ -169,3 +131,65 @@ def pcl_voxel(pcd, voxel_size=0.1):
     centers = (unique_indices + 0.5) * voxel_size + min_coords
     _, indices = tree.query(centers)
     return pcd[indices, :]
+
+
+def split_point_cloud(points, K):
+    # Cluster the points using HDBSCAN
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=30, prediction_data=True).fit(points)
+    labels = clusterer.labels_
+    n_clusters = max(labels) + 1
+    
+    # Find the size of each cluster
+    cluster_sizes = np.zeros(n_clusters)
+    for i in range(n_clusters):
+        cluster_sizes[i] = np.sum(labels == i)
+
+    # Sort the clusters by size (descending order)
+    sorted_clusters = np.argsort(cluster_sizes)[::-1]
+    # Initialize the new point cloud
+    new_points = np.empty((0, 3))
+    membeship = hdbscan.membership_vector(clusterer, points[:1000])
+    print(membeship.shape)
+    exit()
+    # Iterate over the clusters, adding points until K is reached
+    for i in sorted_clusters:
+        cluster_points = points[labels == i]
+        n_points = cluster_points.shape[0]
+
+        # If the cluster has fewer than K points, add all of them
+        if n_points <= K:
+            new_points = np.concatenate((new_points, cluster_points))
+            # test_points = points[~(labels == i)]
+            # cluster_density = hdbscan.probability_density(cluster_points, single_linkage_tree)
+            # cluster_density.argsort()[::-1][0:K-n_points]
+        # If the cluster has more than K points, randomly subsample to get K points
+        else:
+            subsample_indices = np.random.choice(n_points, size=K, replace=False)
+            subsample_points = cluster_points[subsample_indices, :]
+            new_points = np.concatenate((new_points, subsample_points))
+
+    return new_points[:K*n_clusters]
+
+
+
+
+
+
+if __name__ == '__main__':
+    pcl = load_pcl('../datasets/JRDB/velodyne/000000.bin')
+    pcl = pcl[np.linalg.norm(pcl, axis=1) < 15]
+    label_cols = ['obs_angle', 'l', 'w', 'h', 'cx', 'cy', 'cz', 'rot_z', 'num_points']
+    labels = pd.read_csv('../datasets/JRDB/labels/000000.txt', sep=' ', header=None, names=label_cols)
+    pcl_voxeled = pcl_voxel(pcl, voxel_size=0.1)
+    arr = split_point_cloud(pcl_voxeled, 2048)
+    # for label in np.unique(labels):
+    #     fig = plt.figure()
+    #     ax = fig.add_subplot(projection='3d')
+    #     ax.scatter(pcl_voxeled[labels == label, 0], pcl_voxeled[labels == label, 1], pcl_voxeled[labels == label, 2], label=f"Class {label}")
+    #     plt.show()
+    # plt.hist(labels)
+    # plt.show()
+    
+
+    # annotations, boxes = get_point_annotations_kitti(pcl_voxeled, labels, points_min=200)
+    # split_3d_point_cloud_overlapping(pcl_voxeled, annotations, 7, 0.4, pcl_box_num=4096, move_center=False, min_num_per_box=300)

@@ -51,7 +51,7 @@ def numpy_to_o3d(pcl):
     :return: open3d Pointcloud
     """
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pcl[:, :3])
+    pcd.points = o3d.utility.Vector3dVector(pcl)
     return pcd
 
 def plot_frame(pcd):

@@ -67,13 +67,10 @@ def train(traindata, args, validata=None):
             epoch_log['Validation loss'], epoch_log['Validation accuracy'] = val_loss, val_acc
             if(val_loss < best_val_loss):
                 best_val_loss, best_val_acc = val_loss, val_acc
-                if args['save_model']:
-                    torch.save(args['model'].state_dict(), args['save_path'] + f'E{epoch}_{args["session_name"]}.pt')
             else:
                 stop_counter += 1
-        # stopping creteria
-        if(stop_counter == args['stop_counter']):
-            break
+            if args['save_model']:
+                    torch.save(args['model'].state_dict(), args['save_path'] + f'E{epoch}_{args["session_name"]}.pt')
         # Online Monitoring
         if args['online']:
             if len(imgs) > 0:
@@ -81,6 +78,9 @@ def train(traindata, args, validata=None):
                 table = wandb.Table(data =[[epoch, *imgs]], columns=columns)
                 epoch_log['table_image'] = table
             wandb.log(epoch_log)
+        # stopping creteria
+        if(stop_counter == args['stop_counter']):
+            break
     return best_val_loss, best_val_acc
 
 def validate(validdata, args, validata=None):
