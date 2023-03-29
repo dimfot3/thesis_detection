@@ -7,7 +7,7 @@ from scipy.spatial import KDTree
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 import trimesh
-from o3d_funcs import plot_frame_annotation_kitti_v2, numpy_to_o3d
+#from o3d_funcs import plot_frame_annotation_kitti_v2, numpy_to_o3d
 import pandas as pd
 import hdbscan
 
@@ -108,19 +108,19 @@ def split_3d_point_cloud_overlapping(pcd, annotations, box_size, overlap_pt, pcl
     boxes, centers = canonicalize_boxes(pcd, boxes, pcl_box_num, move_center)
     return boxes, annotations_arr, centers
 
-# def plot_frame_annotation_kitti_v2(pcl, annotations):
-#     colors = ['red' if annot else 'blue' for annot in annotations]
-#     fig = Figure()
-#     canvas = FigureCanvas(fig)
-#     ax = fig.gca()
-#     ax.scatter(pcl[:, 0], pcl[:, 1], c=colors)
-#     ax.axis('off')
-#     fig.tight_layout(pad=0)
-#     ax.margins(0)
-#     fig.canvas.draw()
-#     image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-#     image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-#     return wandb.Image(image)
+def plot_frame_annotation_kitti_v2(pcl, annotations):
+    colors = ['red' if annot else 'blue' for annot in annotations]
+    fig = Figure()
+    canvas = FigureCanvas(fig)
+    ax = fig.gca()
+    ax.scatter(pcl[:, 0], pcl[:, 1], c=colors)
+    ax.axis('off')
+    fig.tight_layout(pad=0)
+    ax.margins(0)
+    fig.canvas.draw()
+    image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    return wandb.Image(image)
 
 def pcl_voxel(pcd, voxel_size=0.1):
     min_coords = np.min(pcd, axis=0)
@@ -140,7 +140,7 @@ def check_cluster_valdity(cluster_points, core_indices, min_cluster_size=30, max
     if (dists < max_size).sum() > min_cluster_size:
         return True
     return False
-from time import time
+
 def split_point_cloud_adaptive_training(points, annot_labels, K, min_cluster_size=30, max_size_core=2, move_center=True, points_min=100):
     clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, prediction_data=True, cluster_selection_epsilon=0.2).fit(points)
     labels = clusterer.labels_
@@ -162,10 +162,8 @@ def split_point_cloud_adaptive_training(points, annot_labels, K, min_cluster_siz
             subsample_indices = np.random.choice(n_points, size=K, replace=False)
             cluster_idxs = cluster_idxs[subsample_indices]
         cluster_arr_idxs.append(cluster_idxs)
-    t0 = time()
     # out_pcls = [points[idxs] for idxs in cluster_arr_idxs]
     _, boxes = get_point_annotations_kitti(points, annot_labels, points_min=points_min)
-    t1 = time()
     annotations = []
     out_pcls = []
     for cluster_idxs in cluster_arr_idxs:
@@ -176,8 +174,6 @@ def split_point_cloud_adaptive_training(points, annot_labels, K, min_cluster_siz
             if com_idxs[0].shape[0] == 0: continue
             curr_annot[com_idxs[1]] = (com_idxs[0].shape[0] / len(box)) * (np.min([len(box) / points_min, 1]))
         annotations.append(curr_annot)
-    t2 = time()
-    print(t2-t1, t1-t0)
     centers = np.zeros((len(out_pcls), 3))
     if move_center: 
         out_pcls = [cluster  - np.mean(cluster, axis=0) for cluster in out_pcls]
