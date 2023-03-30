@@ -126,8 +126,9 @@ class PointNetSeg(torch.nn.Module):
         self.bn1 = torch.nn.BatchNorm1d(512)
         self.bn2 = torch.nn.BatchNorm1d(256)
         self.bn3 = torch.nn.BatchNorm1d(128)
+        self.dropout = torch.nn.Dropout(p=0.5)
         self.relu = torch.nn.ReLU()
-        self.sigmoid = torch.nn.Sigmoid()
+        #self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x):
         x = x.transpose(2, 1)       # from (B, N, D) to (B, D, N)
@@ -135,11 +136,10 @@ class PointNetSeg(torch.nn.Module):
         n_pts = x.size(2)
         x, trans, trans_feat = self.feat(x)
         x = self.relu(self.bn1(self.conv1(x)))
-        x = self.relu(self.bn2(self.conv2(x)))
-        x = self.relu(self.bn3(self.conv3(x)))
+        x = self.relu(self.bn2(self.dropout(self.conv2(x))))
+        x = self.relu(self.bn3(self.dropout(self.conv3(x))))
         x = self.conv4(x)
         x = x.transpose(2,1).contiguous()           # (B, N, C)
-        x = self.sigmoid(x.view(-1, self.k))
         x = x.view(batchsize, n_pts)
         return x, trans, trans_feat
 

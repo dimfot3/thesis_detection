@@ -37,7 +37,7 @@ def get_point_annotations_kitti(pcl, dflabels, points_min=300):
         # if(dflabels['num_points'][i] < points_min):
         #     continue
         center = np.array([dflabels['cx'][i], dflabels['cy'][i], dflabels['cz'][i]])
-        size = np.array([dflabels['w'][i], dflabels['l'][i], dflabels['h'][i]]) * 1.05
+        size = np.array([dflabels['w'][i], dflabels['l'][i], dflabels['h'][i]]) * 0.95
         trans_mat = np.zeros((4, 4))
         trans_mat[:3, :3], trans_mat[:3, 3], trans_mat[3, 3] = Rotation.from_euler('xyz', [0, 0, dflabels['rot_z'][i]]\
                                                                 , degrees=False).as_matrix(), center.reshape(-1, ), 1
@@ -180,6 +180,35 @@ def split_point_cloud_adaptive_training(points, annot_labels, K, min_cluster_siz
         centers = np.array([np.mean(cluster, axis=0) for cluster in out_pcls])
     return out_pcls, annotations, centers
 
+def split_point_cloud_adaptive(points, K, min_cluster_size=30, max_size_core=2, move_center=True):
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, prediction_data=True, cluster_selection_epsilon=0.2).fit(points)
+    labels = clusterer.labels_
+    n_clusters = max(labels)
+    cluster_arr_idxs = []
+    tree = KDTree(points)
+    for i in range(n_clusters):
+        cluster_idxs = np.argwhere(labels == i).reshape(-1, )
+        cluster_points = points[cluster_idxs]
+        n_points = cluster_points.shape[0]
+        core_indices = clusterer.outlier_scores_[cluster_idxs] < 0.00001
+        test_bool = check_cluster_valdity(cluster_points, core_indices, min_cluster_size, max_size=max_size_core)       # filter out higly sparse clusters 
+        if not test_bool: continue
+        if n_points <= K:       # deal with less than K points
+            _, idxs = tree.query([np.median(cluster_points, axis=0)], k=K)
+            new_idxs = np.setdiff1d(idxs.reshape(-1, ), cluster_idxs)[:K-n_points]
+            cluster_idxs = np.concatenate((cluster_idxs, new_idxs))
+        else:                   # deal with more than K points
+            subsample_indices = np.random.choice(n_points, size=K, replace=False)
+            cluster_idxs = cluster_idxs[subsample_indices]
+        cluster_arr_idxs.append(cluster_idxs)
+    out_pcls = []
+    for cluster_idxs in cluster_arr_idxs:
+        out_pcls.append(points[cluster_idxs])
+    centers = np.zeros((len(out_pcls), 3))
+    if move_center: 
+        centers = np.array([np.mean(cluster, axis=0) for cluster in out_pcls]).reshape(-1, 3)
+        out_pcls = [cluster  - np.mean(cluster, axis=0) for cluster in out_pcls]
+    return out_pcls, centers
 
 if __name__ == '__main__':
     pcl = load_pcl('../datasets/JRDB/velodyne/000003.bin')
