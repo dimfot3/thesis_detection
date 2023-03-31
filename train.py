@@ -57,7 +57,7 @@ def train(traindata, args, validata=None):
             if batch_input.size(0) < 2: continue
             yout, trans, trans_feat = args['model'](batch_input)
             adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
-            args['loss'].pos_weight = torch.tensor([9.7796 ** (1 - adapt_prob)]).to(args['device'])
+            args['loss'].pos_weight = torch.tensor([(np.log10(9.7796)+1) ** (1 - adapt_prob)]).to(args['device'])
             loss = args['loss'](yout.view(-1, args['input_size']), targets.view(-1, args['input_size'])) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
             epoch_loss += loss.item() * batch_input.size(0)         # scaling loss to batch size (loss reduction: mean)
             loss.backward()     # gradient calculation
@@ -141,7 +141,7 @@ def main(args):
     if args['init_weights'] != None:
         model.load_state_dict(torch.load(args['init_weights']))
         print('Loaded weights', args['init_weights'])
-    loss = torch.nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.Tensor([9.7796])).to(args['device'])
+    loss = torch.nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.Tensor([np.log10(9.7796) + 1])).to(args['device'])
     optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'], weight_decay=args['l2coef'])
     args['model'] = model
     args['loss'] = loss
