@@ -56,6 +56,8 @@ def train(traindata, args, validata=None):
             batch_input, targets = batch_input.to(args['device']), targets.type(torch.FloatTensor).to(args['device'])
             if batch_input.size(0) < 2: continue
             yout, trans, trans_feat = args['model'](batch_input)
+            adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
+            args['loss'].pos_weight = torch.tensor([9.7796 ** (1 - adapt_prob)]).to(args['device'])
             loss = args['loss'](yout.view(-1, args['input_size']), targets.view(-1, args['input_size'])) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
             epoch_loss += loss.item() * batch_input.size(0)         # scaling loss to batch size (loss reduction: mean)
             loss.backward()     # gradient calculation
