@@ -37,7 +37,7 @@ def get_f1_score(predicted, ground_truth):
     return np.sum(prec_arr), np.sum(rec_arr), np.sum(f1_arr)
 
 def train(traindata, args, validata=None):
-    train_loader = DataLoader(traindata, batch_size=None, shuffle=True, pin_memory=True if (args['device']=='cuda') else False)
+    train_loader = DataLoader(traindata, batch_size=None, shuffle=True, pin_memory=True if (args['device'][:4]=='cuda') else False)
     best_val_loss, best_val_f1 = 1e10, 0
     stop_counter =  0
     # train loop
