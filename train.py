@@ -58,7 +58,7 @@ def train(traindata, args, validata=None):
             yout, trans, trans_feat = args['model'](batch_input)
             adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
             args['loss'].pos_weight = torch.tensor([(np.log10(9.7796)+1) ** (1 - adapt_prob)]).to(args['device'])
-            loss = args['loss'](yout.view(-1, args['input_size']), targets.view(-1, args['input_size'])) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
+            loss = args['loss'](yout.view(-1, args['input_size']), targets.view(-1, args['input_size'])) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat, args['device'])
             epoch_loss += loss.item() * batch_input.size(0)         # scaling loss to batch size (loss reduction: mean)
             loss.backward()     # gradient calculation
             btc_prec, btc_rec, btc_f1 = get_f1_score(yout.view(-1, args['input_size']), targets.view(-1, args['input_size']))
@@ -103,7 +103,7 @@ def validate(validdata, args, validata=None):
         batch_input, targets = batch_input.to(args['device']), targets.type(torch.FloatTensor).to(args['device'])
         yout, trans, trans_feat  = args['model'](batch_input)
         loss = args['loss'](yout.view(-1, args['input_size']), targets.view(-1, args['input_size'])) + \
-              args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat)
+              args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat, args['device'])
         val_loss += loss.item() * batch_input.size(0)         # scaling loss to batch size (loss reduction: mean)
         scores = get_f1_score(yout.view(-1, args['input_size']), targets.view(-1, args['input_size']))
         prec, recall, f1 = prec + scores[0], recall + scores[1], f1 + scores[2]
@@ -136,7 +136,7 @@ def main(args):
                          humanDBLoader(args['valid_data'], batch_size=args['batch_size']), \
                         humanDBLoader(args['test_data'], batch_size=args['batch_size'])
     # loading model, optimizer, scheduler, loss func
-    model = PointNetSeg(1).to(args['device'])
+    model = PointNetSeg(1, device=args['device']).to(args['device'])
     # loading weights for the model
     if args['init_weights'] != None:
         model.load_state_dict(torch.load(args['init_weights']))

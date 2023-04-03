@@ -4,7 +4,7 @@ from torchsummary import summary
 
 
 class TransformationNet(torch.nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, device='cuda:0'):
         super(TransformationNet, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -21,6 +21,7 @@ class TransformationNet(torch.nn.Module):
         self.bn3 = torch.nn.BatchNorm1d(1024)
         self.bn4 = torch.nn.BatchNorm1d(512)
         self.bn5 = torch.nn.BatchNorm1d(256)
+        self.device = device
 
     def forward(self, x):
         batchsize = x.size()[0]
@@ -36,14 +37,14 @@ class TransformationNet(torch.nn.Module):
 
         identity_matrix = torch.eye(self.output_dim)
         if torch.cuda.is_available():
-            identity_matrix = identity_matrix.cuda()
+            identity_matrix = identity_matrix.to(self.device)
         x = x.view(-1, self.output_dim, self.output_dim) + identity_matrix
         return x
 
 class PointNetEncoder(torch.nn.Module):
-    def __init__(self, global_feat=True, feature_transform=False, channel=3):
+    def __init__(self, global_feat=True, feature_transform=False, channel=3, device='cuda:0'):
         super(PointNetEncoder, self).__init__()
-        self.stn = TransformationNet(channel, channel)
+        self.stn = TransformationNet(channel, channel, device=device)
         self.conv1 = torch.nn.Conv1d(channel, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
         self.conv3 = torch.nn.Conv1d(128, 1024, 1)
@@ -54,7 +55,8 @@ class PointNetEncoder(torch.nn.Module):
         self.global_feat = global_feat
         self.feature_transform = feature_transform
         if self.feature_transform:
-            self.fstn = TransformationNet(64, 64)
+            self.fstn = TransformationNet(64, 64, device=device)
+        self.device = device
 
     def forward(self, x):
         B, D, N = x.size()
@@ -115,10 +117,10 @@ class PointNetClass(torch.nn.Module):
         return x
 
 class PointNetSeg(torch.nn.Module):
-    def __init__(self, num_class):
+    def __init__(self, num_class, device='cuda:0'):
         super(PointNetSeg, self).__init__()
         self.k = num_class
-        self.feat = PointNetEncoder(global_feat=False, feature_transform=True, channel=3)
+        self.feat = PointNetEncoder(global_feat=False, feature_transform=True, channel=3, device=device)
         self.conv1 = torch.nn.Conv1d(1088, 512, 1)
         self.conv2 = torch.nn.Conv1d(512, 256, 1)
         self.conv3 = torch.nn.Conv1d(256, 128, 1)
@@ -147,11 +149,11 @@ def bn_momentum_adjust(m, momentum):
     if isinstance(m, torch.nn.BatchNorm2d) or isinstance(m, torch.nn.BatchNorm1d):
         m.momentum = momentum
 
-def feature_transform_reguliarzer(trans):
+def feature_transform_reguliarzer(trans, device='cuda:0'):
     d = trans.size()[1]
     I = torch.eye(d)[None, :, :]
     if trans.is_cuda:
-        I = I.cuda()
+        I = I.to(device)
     loss = torch.mean(torch.norm(torch.bmm(trans, trans.transpose(2, 1)) - I, dim=(1, 2)))
     return loss
 
@@ -160,5 +162,5 @@ if __name__ == '__main__':
     device = 'cuda:0'
     model = PointNetClass(1).to(device)
     summary(model, (2048, 3))
-    model = PointNetSeg(1).to(device)
+    model = PointNetSeg(1, device).to(device)
     summary(model, (2048, 3))
