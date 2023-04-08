@@ -6,6 +6,8 @@ from cuml.cluster import HDBSCAN
 import cuml
 from scipy.spatial import KDTree
 from time import time
+import cupy as cp
+import torch
 
 
 def create_hclusters(pcl_gpu, min_cluster_size=50):
@@ -58,9 +60,17 @@ def split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=50, return_p
     labels, memberships = merge_degenerared_clusters(labels, memberships, cluster_shape)
     cluster_idxs = canonicalize_cluster(pcl, labels, memberships, cluster_shape)
     if return_pcl_gpu:
-        return cluster_idxs, pcl_gpu
+        tensor_arr = []
+        center_arr = []
+        cp_arr = cp.asarray(pcl_gpu)
+        for idxs in cluster_idxs:
+            cp_contig = cp.ascontiguousarray(cp_arr[idxs])
+            center_arr.append(pcl[idxs].mean(axis=0))
+            tensor_arr.append(torch.from_numpy(cp_contig.get()).cuda().reshape(2048, 3).type(torch.cuda.FloatTensor) \
+                               - torch.Tensor(center_arr[-1]).type(torch.cuda.FloatTensor))
+        tensor_3d = torch.stack(tensor_arr) if len(tensor_arr) > 0 else None
+        return cluster_idxs, tensor_3d, center_arr
     return cluster_idxs
-
 if __name__ == '__main__':
     from o3d_funcs import pcl_voxel
     pcl = np.fromfile('test.bin', dtype='float32').reshape(-1, 3)
