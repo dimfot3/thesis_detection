@@ -8,7 +8,7 @@ from torch.utils.data.dataset import random_split
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from scipy.spatial import KDTree
-
+from models.Pointnet2 import Pointet2
 
 # reproducability
 random_seed = 0 
@@ -32,8 +32,8 @@ def get_f1_score(predicted, ground_truth):
 
 if __name__ == '__main__':
     pcl_arr = ['./datasets/plane_detection_dataset/jrdb3.bin']
-    model = PointNetSeg(1)
-    model.load_state_dict(torch.load('./results/E17_v00.06.pt'))
+    model = Pointet2()
+    model.load_state_dict(torch.load('./results/E35_v00.04.pt'))
     model.to('cuda')
     model.eval()
     for pcl_file in pcl_arr:
@@ -43,7 +43,7 @@ if __name__ == '__main__':
         boxes, centers = split_point_cloud_adaptive(pcl, 2048, \
                                                     min_cluster_size=30, max_size_core=0.5, move_center=True)
         boxes_tor = torch.tensor(boxes).type(torch.cuda.FloatTensor).to('cuda')
-        yout, _, _ = model(boxes_tor)
+        yout,_ = model(boxes_tor)
         yout = yout.detach().cpu().numpy()
         tree = KDTree(pcl)
         annots = np.zeros((pcl.shape[0], ))

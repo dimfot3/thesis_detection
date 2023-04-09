@@ -182,8 +182,8 @@ def split_point_cloud_adaptive_training(points, annot_labels, K, min_cluster_siz
     return out_pcls, annotations, centers
 
 def split_point_cloud_adaptive(points, K, min_cluster_size=30, max_size_core=2, move_center=True):
-    clusterer = HDBSCAN(min_cluster_size=min_cluster_size, metric='euclidean')
-    labels = hdbscan.fit_predict(points)
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, prediction_data=True, cluster_selection_epsilon=0.2).fit(points)
+    labels = clusterer.labels_
     n_clusters = max(labels)
     cluster_arr_idxs = []
     tree = KDTree(points)
