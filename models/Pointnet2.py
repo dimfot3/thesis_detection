@@ -327,7 +327,7 @@ class Pointet2(nn.Module):
 
         x = self.drop1(F.relu(self.bn1(self.conv1(l0_points))))
         x = self.conv2(x)
-        x = self.sigmoid(x)
+        # x = self.sigmoid(x)
         x = x.permute(0, 2, 1)
         return x, l4_points
 
