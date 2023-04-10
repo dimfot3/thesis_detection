@@ -57,8 +57,8 @@ def train_pointnet(traindata, args, validata=None):
             batch_input, targets = batch_input.to(args['device']), targets.type(torch.FloatTensor).to(args['device'])
             if batch_input.size(0) < 2: continue
             yout, trans, trans_feat = args['model'](batch_input)
-            adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
-            args['loss'].pos_weight = torch.tensor([(np.log10(9.7796)+1) ** (1 - adapt_prob)]).to(args['device'])
+            # adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
+            # args['loss'].pos_weight = torch.tensor([(np.log10(9.7796)+1) ** (1 - adapt_prob)]).to(args['device'])
             loss = args['loss'](yout.view(-1, args['input_size']), targets.view(-1, args['input_size'])) + args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat, args['device'])
             epoch_loss += loss.item() * batch_input.size(0)         # scaling loss to batch size (loss reduction: mean)
             loss.backward()     # gradient calculation
@@ -76,6 +76,8 @@ def train_pointnet(traindata, args, validata=None):
             val_loss, val_prec, val_rec, val_f1, imgs = validate(validata, args)
             epoch_log['valid_loss'], epoch_log['valid_prec'], epoch_log['valid_rec'], epoch_log['valid_f1'] = \
                 val_loss, val_prec, val_rec, val_f1
+            adapt_prob = val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
+            args['loss'].pos_weight = adapt_prob
             if(val_f1 > best_val_f1):
                 best_val_loss, best_val_f1 = val_loss, val_f1
                 stop_counter = 0
@@ -115,8 +117,8 @@ def train_pointnet2(traindata, args, validata=None):
             batch_input, targets = batch_input.to(args['device']), targets.type(torch.FloatTensor).to(args['device'])
             if batch_input.size(0) < 2: continue
             yout, _ = args['model'](batch_input)
-            adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
-            args['loss'].pos_weight = torch.tensor([(np.log10(9.7796)+1) ** (1 - adapt_prob)]).to(args['device'])
+            # adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
+            # args['loss'].pos_weight = torch.tensor([(np.log10(9.7796)+1) ** (1 - adapt_prob)]).to(args['device'])
             loss = args['loss'](yout.view(-1, args['input_size']), targets.view(-1, args['input_size']))
             epoch_loss += loss.item() * batch_input.size(0)         # scaling loss to batch size (loss reduction: mean)
             loss.backward()     # gradient calculation
@@ -134,13 +136,15 @@ def train_pointnet2(traindata, args, validata=None):
             val_loss, val_prec, val_rec, val_f1, imgs = validate(validata, args)
             epoch_log['valid_loss'], epoch_log['valid_prec'], epoch_log['valid_rec'], epoch_log['valid_f1'] = \
                 val_loss, val_prec, val_rec, val_f1
+            adapt_prob = val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
+            args['loss'].pos_weight = adapt_prob
             if(val_f1 > best_val_f1):
                 best_val_loss, best_val_f1 = val_loss, val_f1
                 stop_counter = 0
             else:
                 stop_counter += 1
             if args['save_model']:
-                    torch.save(args['model'].state_dict(), args['save_path'] + f'E{epoch}_{args["session_name"]}.pt')
+                torch.save(args['model'].state_dict(), args['save_path'] + f'E{epoch}_{args["session_name"]}.pt')
         # Online Monitoring
         if args['online']:
             if len(imgs) > 0:
