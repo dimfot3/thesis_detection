@@ -78,7 +78,7 @@ def train_pointnet(traindata, args, validata=None):
             val_loss, val_prec, val_rec, val_f1, imgs = validate(validata, args)
             epoch_log['valid_loss'], epoch_log['valid_prec'], epoch_log['valid_rec'], epoch_log['valid_f1'] = \
                 val_loss, val_prec, val_rec, val_f1
-            if epoch > 15:
+            if epoch > 10:
                 adapt_prob = val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
                 args['loss'].pos_weight = torch.tensor(adapt_prob).to(args['device'])
             if(val_f1 > best_val_f1):
