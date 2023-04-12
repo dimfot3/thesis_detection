@@ -14,6 +14,8 @@ import sys
 from utils.humanDBLoader import humanDBLoader
 from utils.pcl_utils import plot_frame_annotation_kitti_v2
 sys.path.insert(0, 'tests')
+from time import time 
+
 
 # reproducability
 random_seed = 0 
@@ -76,8 +78,9 @@ def train_pointnet(traindata, args, validata=None):
             val_loss, val_prec, val_rec, val_f1, imgs = validate(validata, args)
             epoch_log['valid_loss'], epoch_log['valid_prec'], epoch_log['valid_rec'], epoch_log['valid_f1'] = \
                 val_loss, val_prec, val_rec, val_f1
-            adapt_prob = val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
-            args['loss'].pos_weight = adapt_prob
+            if epoch > 15:
+                adapt_prob = val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
+                args['loss'].pos_weight = torch.tensor(adapt_prob).to(args['device'])
             if(val_f1 > best_val_f1):
                 best_val_loss, best_val_f1 = val_loss, val_f1
                 stop_counter = 0
@@ -137,7 +140,7 @@ def train_pointnet2(traindata, args, validata=None):
             epoch_log['valid_loss'], epoch_log['valid_prec'], epoch_log['valid_rec'], epoch_log['valid_f1'] = \
                 val_loss, val_prec, val_rec, val_f1
             adapt_prob = val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
-            args['loss'].pos_weight = adapt_prob
+            args['loss'].pos_weight = torch.tensor(adapt_prob).to(args['device'])
             if(val_f1 > best_val_f1):
                 best_val_loss, best_val_f1 = val_loss, val_f1
                 stop_counter = 0
