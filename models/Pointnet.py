@@ -143,7 +143,7 @@ class PointNetSeg(torch.nn.Module):
         x = self.conv4(x)
         x = x.transpose(2,1).contiguous()           # (B, N, C)
         x = x.view(batchsize, n_pts)
-        return x, trans, trans_feat
+        return x, trans_feat
 
 def bn_momentum_adjust(m, momentum):
     if isinstance(m, torch.nn.BatchNorm2d) or isinstance(m, torch.nn.BatchNorm1d):
@@ -163,4 +163,7 @@ if __name__ == '__main__':
     model = PointNetClass(1).to(device)
     summary(model, (2048, 3))
     model = PointNetSeg(1, device).to(device)
-    summary(model, (2048, 3))
+    for i in range(100):
+        x_rand = torch.Tensor(np.random.random((32, 1024+i, 3)) * 300).to(device=device)
+        yout, _, _= model(x_rand)
+        print(yout.size())
