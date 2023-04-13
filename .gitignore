@@ -1,1 +1,10 @@
-./results/*
+results/*.pt
+results/*.db
+*.bin
+*.npy
+*.zip
+*.h5py
+wandb
+*__pycache__*
+datasets
+.vscode
