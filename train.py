@@ -59,8 +59,6 @@ def train_pointnet(traindata, args, validata=None):
             batch_input, targets = batch_input.to(args['device']), targets.type(torch.FloatTensor).to(args['device'])
             if batch_input.size(0) < 2: continue
             yout, trans_feat = args['model'](batch_input)
-            # adapt_prob = torch.sigmoid(yout).detach().cpu().numpy().sum() / (batch_input.size(0) * args['input_size'])
-            # args['loss'].pos_weight = torch.tensor([(np.log10(9.7796)+1) ** (1 - adapt_prob)]).to(args['device'])
             if args['model_name'] == 'Pointnet':
                 loss = args['loss'](yout.view(-1, batch_input.size(1)), targets.view(-1, batch_input.size(1))) + \
                       args['feat_reg_eff'] * feature_transform_reguliarzer(trans_feat, args['device'])
@@ -81,10 +79,9 @@ def train_pointnet(traindata, args, validata=None):
         if((epoch + 1) % args['valid_freq'] == 0) and (validata!=None):
             val_loss, val_prec, val_rec, val_f1, imgs = validate(validata, args)
             epoch_log['valid_loss'], epoch_log['valid_prec'], epoch_log['valid_rec'], epoch_log['valid_f1'] = \
-                val_loss, val_prec, val_rec, val_f1
-            if epoch > 10:
-                adapt_prob = val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
-                args['loss'].pos_weight = torch.tensor(adapt_prob).to(args['device'])
+            val_loss, val_prec, val_rec, val_f1
+            adapt_prob = args['weight_adapt'] * val_prec / val_rec if val_rec > 0 else np.log10(9.7796)+1
+            args['loss'].pos_weight = torch.tensor(adapt_prob).to(args['device'])
             if(val_f1 > best_val_f1):
                 best_val_loss, best_val_f1 = val_loss, val_f1
                 stop_counter = 0
@@ -131,7 +128,7 @@ def validate(validdata, args, validata=None):
 
 def main(args):
     # loading dataset and splitting to train, valid, test
-    traindata, validata = humanDBLoader(args['train_data'], batch_size=args['batch_size'], augmentation=True), \
+    traindata, validata = humanDBLoader(args['train_data'], batch_size=args['batch_size'], augmentation=args['augmentation']), \
                          humanDBLoader(args['valid_data'], batch_size=args['batch_size'], augmentation=False)
     # loading model, optimizer, scheduler, loss func
     if(args['model_name'] == 'Pointnet'):
