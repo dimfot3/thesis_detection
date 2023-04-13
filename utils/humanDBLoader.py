@@ -7,14 +7,17 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import h5py
+from DataAugemnetations import Augmentator
 
 class humanDBLoader(Dataset):
-    def __init__(self, data_path, batch_size=32):
+    def __init__(self, data_path, batch_size=32, augmentation=False):
         self.data_file = h5py.File(data_path, 'r')
         self.data_len = self.data_file['pcls'].len()
         self.batch_size = batch_size
         self.batch_num = np.ceil(self.data_len // self.batch_size).astype('int')
-
+        self.augmentation = augmentation
+        self.augmentator = Augmentator(remove_p=0.3, noise_std=0.08, add_points_p=0.05, rot_prob=[0.1, 0.6, 0.2])
+        
     def __len__(self):
         return self.batch_num
 
@@ -23,11 +26,13 @@ class humanDBLoader(Dataset):
         splitted_pcl, splitted_ann, centers = self.data_file['pcls'][start_idx:end_idx], \
                                         self.data_file['annotations'][start_idx:end_idx], \
                                         self.data_file['centers'][start_idx:end_idx]
+        if self.augmentation:
+            splitted_pcl, splitted_ann = self.augmentator.apply_augmentation(splitted_pcl, splitted_ann)
         return splitted_pcl.astype('float32'), splitted_ann.astype('float32'), centers.astype('float32')
 
 
 if __name__ == '__main__':
-    path = '/media/visitor1/DBStorage/Datasets/JRDB/training_format/training_data.h5py'
+    path = '/media/visitor1/DBStorage/Datasets/JRDB/training_format/train_data.h5py'
     dataset = humanDBLoader(path, batch_size=16)
     dataloader = DataLoader(dataset, batch_size=None, shuffle=True)
     human = []
