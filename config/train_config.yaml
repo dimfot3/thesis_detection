@@ -1,4 +1,4 @@
-model_name: 'Pointnet2'
+model_name: 'Pointnet'
 lr: 0.001
 lr_decay: 0.5
 lr_step: 20
@@ -11,18 +11,20 @@ batch_size: 10
 epochs: 300
 epoch_start: 0
 input_size: 2048
+weight_adapt: 1
 
 valid_per: 0.2
 test_per: 0.1
+augmentation: False
 device: 'cuda'
 valid_freq: 3
 stop_counter: 10
-save_model: True
+save_model: False
 save_path: './results/'
 train_data: './datasets/JRDB/test_data.h5py'
 valid_data: './datasets/JRDB/test_data.h5py'
 test_data: './datasets/JRDB/test_data.h5py'
 init_weights: null
 session_name: 'v01.04'
-online: True
-visualization: True
+online: False
+visualization: False
