@@ -10,7 +10,6 @@ import trimesh
 #from o3d_funcs import plot_frame_annotation_kitti_v2, numpy_to_o3d
 import pandas as pd
 import hdbscan
-from cuml.cluster import HDBSCAN
 
 
 def load_pcl(pcl_path):
