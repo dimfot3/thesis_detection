@@ -17,6 +17,7 @@ def create_hclusters(pcl_gpu, min_cluster_size=50):
     labels = hdbscan.fit_predict(pcl_gpu_df)
     memberships = cuml.cluster.hdbscan.all_points_membership_vectors(hdbscan)
     labels = labels.to_numpy()
+    del pcl_gpu_df
     return labels, memberships
 
 def merge_degenerared_clusters(labels, memberships, cluster_shape=2048):
@@ -25,7 +26,7 @@ def merge_degenerared_clusters(labels, memberships, cluster_shape=2048):
     sorted_idxs = np.argsort(cluster_num)
     classes, cluster_num = classes[sorted_idxs], cluster_num[sorted_idxs]
     while True:
-        if cluster_num[0] >= cluster_shape/2:
+        if cluster_num[0] >= cluster_shape/4:
             break
         cand_class = classes[1:][cluster_num[1:] < cluster_shape]
         if len(cand_class) == 0: break
@@ -55,22 +56,20 @@ def canonicalize_cluster(pcl, labels, memberships, cluster_shape=2048):
     return cluster_idxs
 
 def split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=50, return_pcl_gpu=False):
-    pcl_gpu = nb.cuda.to_device(pcl)
-    labels, memberships = create_hclusters(pcl_gpu, min_cluster_size)
+    labels, memberships = create_hclusters(pcl, min_cluster_size)
     labels, memberships = merge_degenerared_clusters(labels, memberships, cluster_shape)
     cluster_idxs = canonicalize_cluster(pcl, labels, memberships, cluster_shape)
     if return_pcl_gpu:
         tensor_arr = []
         center_arr = []
-        cp_arr = cp.asarray(pcl_gpu)
         for idxs in cluster_idxs:
-            cp_contig = cp.ascontiguousarray(cp_arr[idxs])
             center_arr.append(pcl[idxs].mean(axis=0))
-            tensor_arr.append(torch.from_numpy(cp_contig.get()).cuda().reshape(2048, 3).type(torch.cuda.FloatTensor) \
-                               - torch.Tensor(center_arr[-1]).type(torch.cuda.FloatTensor))
+            tensor_arr.append(torch.tensor(pcl[idxs]).reshape(2048, 3).to('cuda:0').type(torch.cuda.FloatTensor) \
+                               - torch.Tensor(center_arr[-1]).type(torch.cuda.FloatTensor).to('cuda:0'))
         tensor_3d = torch.stack(tensor_arr) if len(tensor_arr) > 0 else None
         return cluster_idxs, tensor_3d, center_arr
     return cluster_idxs
+
 if __name__ == '__main__':
     from o3d_funcs import pcl_voxel
     pcl = np.fromfile('test.bin', dtype='float32').reshape(-1, 3)

@@ -1,4 +1,4 @@
-model_name: 'Pointnet'
+model_name: 'Pointnet2'
 lr: 0.001
 lr_decay: 0.5
 lr_step: 20

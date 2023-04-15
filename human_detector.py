@@ -14,6 +14,7 @@ from utils.o3d_funcs import pcl_voxel
 from utils.hierarchical_splitting import split_pcl_to_clusters
 from sensor_msgs.msg import PointCloud2, PointField
 from models.Pointnet import PointNetSeg
+from models.Pointnet2 import Pointet2
 from geometry_msgs.msg import PointStamped
 import torch
 from scipy.spatial import KDTree
@@ -24,6 +25,7 @@ class HumanDetector(Node):
         super().__init__('human_detector')
         self.lidar_list = lidar_list
         self.lidar_frames, self.lidar_pcl, self.lidar_times = {}, {}, {}
+        self.det_model = det_model
         self.tf_sub = self.create_subscription(TFMessage, '/tf', self.read_lidar_frames, 20)
         self.lidar_sub = {}
         for lidar in lidar_list:
@@ -31,11 +33,10 @@ class HumanDetector(Node):
         self.tf_frames_event = threading.Event()
         self.detection_thread = threading.Thread(target=self.detection_loop)
         self.curr_lidar = queue.Queue(maxsize=1)
-        self.pub_cls = self.create_publisher(PointCloud2, '/lidar_3', 10)
-        self.det_model = det_model
-        self.human_dot_pub = self.create_publisher(PointStamped, '/human_dot', 10)
+        self.pub_cls = self.create_publisher(PointCloud2, '/lidar_clustering', 10)
         self.human_seg_pub = self.create_publisher(PointCloud2, '/human_seg', 10)
-
+        self.human_dot_pub = self.create_publisher(PointStamped, '/human_detections', 10)
+        
     def read_lidar_frames(self, msg):
         tf_mat = self.tfmsg_to_matrix(msg)
         if (msg.transforms[0].child_frame_id not in list(self.lidar_frames.keys())) and \
@@ -78,20 +79,6 @@ class HumanDetector(Node):
     def start_detection(self):
         print('Detection Started')
         self.detection_thread.start()
-    
-    def merge_pcls(self):
-        merged_pcl = np.empty((0, 3), dtype=np.float32)
-        # lidar_times = [self.lidar_queues[lidar].get() for lidar in self.lidar_list:]
-        return merged_pcl
-
-    def voxel_downsample(self, points, voxel_size):
-        voxel_indices = np.floor(points / voxel_size).astype(np.int32)
-        voxel_centers = np.zeros_like(voxel_indices, dtype=np.float32)
-        np.add.at(voxel_centers, np.transpose(voxel_indices), points)
-        voxel_counts = np.zeros_like(voxel_indices, dtype=np.int32)
-        np.add.at(voxel_counts, np.transpose(voxel_indices), 1)
-        voxel_centers /= voxel_counts
-        return voxel_centers
 
     def publish_pcl_clusters(self, pcl, clusters):
         labels = np.zeros((pcl.shape[0], 1))
@@ -129,7 +116,7 @@ class HumanDetector(Node):
             times[idxs] += 1
         annots[times > 0] /= times[times > 0]
         annots = np.clip(annots, 0, 1)
-        annots_idxs = np.argsort(annots)[::-1][:40]
+        annots_idxs = np.argsort(annots)[::-1][:10]
         point = np.mean(pcl[annots_idxs], axis=0)
         msg = PointStamped()
         msg.header.frame_id = 'world'
@@ -176,16 +163,18 @@ class HumanDetector(Node):
         self.sync = ApproximateTimeSynchronizer([item[1] for item in self.lidar_sub.items()], queue_size=10, slop=0.2)
         self.sync.registerCallback(self.read_lidar)
         while(rclpy.ok()):
-            if  not self.curr_lidar.full(): continue
+            if not self.curr_lidar.full(): continue
             input_lidar_info = self.curr_lidar.get()
             pcl = input_lidar_info['data']
             pcl = pcl_voxel(pcl, voxel_size=0.12)
-            cluster_idxs, pytorch_tensor, center_arr = split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=70, return_pcl_gpu=True)
+            cluster_idxs, pytorch_tensor, center_arr = split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=50, return_pcl_gpu=True)
             if(pytorch_tensor == None):
                 continue
-            yout, _, _ = self.det_model(pytorch_tensor)
-            self.publish_human_seg(pytorch_tensor.detach().cpu().numpy(), center_arr, pcl, yout.detach().cpu().numpy())
+            yout, _ = self.det_model(pytorch_tensor)
+            pytorch_tensor, yout = pytorch_tensor.detach().cpu().numpy(), yout.detach().cpu().numpy()
+            self.publish_human_seg(pytorch_tensor, center_arr, pcl, yout)
             self.publish_pcl_clusters(pcl, cluster_idxs)
+            self.publish_human_point(pytorch_tensor, center_arr, pcl, yout)
             # print(pytorch_tensor.shape)
             # fig = plt.figure()
             # ax = fig.add_subplot(111, projection='3d')
@@ -196,7 +185,9 @@ class HumanDetector(Node):
 def main():
     rclpy.init()        # initialize ros2
     model = PointNetSeg(1).to('cuda:0').eval()      # initialize model
-    model.load_state_dict(torch.load('./results/E11_v00.07.pt'))
+    model = Pointet2().to('cuda:0').eval() 
+    model.load_state_dict(torch.load('./results/E11_v01.05.pt'))
+    # model.load_state_dict(torch.load('./results/E11_v00.07.pt'))
     human = HumanDetector(['lidar_1', 'lidar_2'], model)        # initialize Human detector node
     human.start_detection()      # start detection
     rclpy.spin(human)           # start ros2 node

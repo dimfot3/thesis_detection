@@ -33,13 +33,13 @@ def get_f1_score(predicted, ground_truth):
 if __name__ == '__main__':
     pcl_arr = ['./datasets/plane_detection_dataset/jrdb3.bin']
     model = Pointet2()
-    model.load_state_dict(torch.load('./results/E35_v00.04.pt'))
+    model.load_state_dict(torch.load('./results/E11_v01.05.pt'))
     model.to('cuda')
     model.eval()
     for pcl_file in pcl_arr:
         pcl = load_pcl(pcl_file)
         pcl = pcl[np.linalg.norm(pcl, axis=1) < 15]
-        pcl = pcl_voxel(pcl, 0.13)
+        pcl = pcl_voxel(pcl, 0.1)
         boxes, centers = split_point_cloud_adaptive(pcl, 2048, \
                                                     min_cluster_size=30, max_size_core=0.5, move_center=True)
         boxes_tor = torch.tensor(boxes).type(torch.cuda.FloatTensor).to('cuda')
@@ -54,9 +54,9 @@ if __name__ == '__main__':
             idxs = idxs.reshape(-1, )
             annots[idxs] += yout[i].reshape(-1, )
             times[idxs] += 1
-        annots[times>0] /= times[times>0]
+        # annots[times>0] /= times[times>0]
         annots = np.clip(annots, 0, 1)
-        # annots = annots > 0.5
+        annots = annots > 0.5
         ax = plt.subplot(1, 1, 1, projection='3d')
         ax.scatter(pcl[:, 0], pcl[:, 1], pcl[:, 2], c=annots)
         plt.show()
