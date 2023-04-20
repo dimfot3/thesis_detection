@@ -64,11 +64,22 @@ def split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=50, return_p
         center_arr = []
         for idxs in cluster_idxs:
             center_arr.append(pcl[idxs].mean(axis=0))
-            tensor_arr.append(torch.tensor(pcl[idxs]).reshape(2048, 3).to('cuda:0').type(torch.cuda.FloatTensor) \
+            tensor_arr.append(torch.tensor(pcl[idxs]).reshape(cluster_shape, 3).to('cuda:0').type(torch.cuda.FloatTensor) \
                                - torch.Tensor(center_arr[-1]).type(torch.cuda.FloatTensor).to('cuda:0'))
         tensor_3d = torch.stack(tensor_arr) if len(tensor_arr) > 0 else None
         return cluster_idxs, tensor_3d, center_arr
     return cluster_idxs
+
+def focused_split_to_boxes(pcl, human_poses, cluster_shape=2048):
+    tree = KDTree(pcl)
+    clustr_arr, center_arr = np.zeros((human_poses.shape[0], cluster_shape, 3)), np.zeros((human_poses.shape[0], 3))
+    for i, pose in enumerate(human_poses):
+        _, idxs = tree.query([pose], k=cluster_shape)
+        clustr_arr[i] = pcl[idxs.reshape(-1, )]
+        center_arr[i] = clustr_arr[i].mean(axis=0)
+        clustr_arr[i] -= center_arr[i]
+    tensor_3d = torch.Tensor(clustr_arr).type(torch.cuda.FloatTensor).to('cuda:0')
+    return tensor_3d, center_arr
 
 if __name__ == '__main__':
     from o3d_funcs import pcl_voxel

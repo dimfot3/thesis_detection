@@ -11,13 +11,14 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from time import time
 import ros2_numpy
 from utils.o3d_funcs import pcl_voxel
-from utils.hierarchical_splitting import split_pcl_to_clusters
+from utils.hierarchical_splitting import split_pcl_to_clusters, focused_split_to_boxes
 from sensor_msgs.msg import PointCloud2, PointField
 from models.Pointnet import PointNetSeg
 from models.Pointnet2 import Pointet2
 from geometry_msgs.msg import PointStamped
 import torch
 from scipy.spatial import KDTree
+from sklearn.cluster import DBSCAN
 
 
 class HumanDetector(Node):
@@ -35,7 +36,8 @@ class HumanDetector(Node):
         self.curr_lidar = queue.Queue(maxsize=1)
         self.pub_cls = self.create_publisher(PointCloud2, '/lidar_clustering', 10)
         self.human_seg_pub = self.create_publisher(PointCloud2, '/human_seg', 10)
-        self.human_dot_pub = self.create_publisher(PointStamped, '/human_detections', 10)
+        self.human_dot_pub = self.create_publisher(PointCloud2, '/human_detections', 10)
+        self.det_thresh = 0.8
         
     def read_lidar_frames(self, msg):
         tf_mat = self.tfmsg_to_matrix(msg)
@@ -104,41 +106,28 @@ class HumanDetector(Node):
         msg.data = pcl.tobytes()
         self.pub_cls.publish(msg)        
 
-    def publish_human_point(self, boxes, centers, pcl, yout):
-        tree = KDTree(pcl)
-        annots = np.zeros((pcl.shape[0], ))
-        times = np.zeros((pcl.shape[0], ))
-        for i, box in enumerate(boxes):
-            box += centers[i]
-            _, idxs = tree.query(box, k=1)
-            idxs = idxs.reshape(-1, )
-            annots[idxs] += yout[i].reshape(-1, )
-            times[idxs] += 1
-        annots[times > 0] /= times[times > 0]
-        annots = np.clip(annots, 0, 1)
-        annots_idxs = np.argsort(annots)[::-1][:10]
-        point = np.mean(pcl[annots_idxs], axis=0)
-        msg = PointStamped()
-        msg.header.frame_id = 'world'
+    def publish_humans(self, human_poses):
+        if(human_poses.shape[0] < 1):
+            return
+        msg = PointCloud2()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.point.x = point[0]
-        msg.point.y = point[1]
-        msg.point.z = point[2]
-        self.human_dot_pub.publish(msg)
+        msg.header.frame_id = "world"
+        msg.fields.append(PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1))
+        msg.fields.append(PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1))
+        msg.fields.append(PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1))
+        msg.point_step = 12
+        msg.height = 1
+        msg.width = human_poses.shape[0]
+        msg.row_step = msg.point_step * human_poses.shape[0]
+        msg.is_bigendian = False
+        msg.is_dense = True
+        msg.data = human_poses.astype(np.float32).tobytes()
+        self.human_dot_pub.publish(msg)        
 
-    def publish_human_seg(self, boxes, centers, pcl, yout):
-        tree = KDTree(pcl)
-        annots = np.zeros((pcl.shape[0], ))
-        times = np.zeros((pcl.shape[0], ))
-        for i, box in enumerate(boxes):
-            box += centers[i]
-            _, idxs = tree.query(box, k=1)
-            idxs = idxs.reshape(-1, )
-            annots[idxs] += yout[i].reshape(-1, )
-            times[idxs] += 1
-        # annots[times > 0] /= times[times > 0]
-        pcl = np.hstack((pcl, annots.reshape(-1, 1))).astype('float32')
-        pcl = pcl[pcl[:, 3] > 0.1]
+    def publish_human_seg(self, human_points):
+        if(human_points.shape[0] == 0):
+            return
+        pcl = human_points
         msg = PointCloud2()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "world"
@@ -155,43 +144,74 @@ class HumanDetector(Node):
         msg.data = pcl.tobytes()
         self.human_seg_pub.publish(msg)        
 
+    def get_human_poses(self, boxes, centers, pcl, yout):
+        pcl, centers, yout, boxes = np.copy(pcl), np.copy(centers), np.copy(yout), np.copy(boxes)
+        # merge boxes
+        tree = KDTree(pcl)
+        annots = np.zeros((pcl.shape[0], ))
+        times = np.zeros((pcl.shape[0], ))
+        for i, box in enumerate(boxes):
+            box += centers[i]
+            _, idxs = tree.query(box, k=1)
+            idxs = idxs.reshape(-1, )
+            annots[idxs] += yout[i].reshape(-1, )
+            times[idxs] += 1
+        annots[times > 0] /= times[times > 0]
+        pcl = np.hstack((pcl, annots.reshape(-1, 1))).astype('float32')
+        # filter pcl based on probability detection
+        pcl = pcl[pcl[:, 3] > self.det_thresh]
+        if(pcl.shape[0] == 0):
+            return np.array([]), np.array([])
+        # semantic to instanse
+        clustering = DBSCAN(eps=0.5, min_samples=30).fit(pcl[:, :3])
+        cluster_labels = clustering.labels_
+        human_ids = np.unique(cluster_labels[cluster_labels>=0])
+        human_poses = np.zeros(shape=(human_ids.shape[0], 3))
+        for i, human_id in enumerate(human_ids):
+            human_poses[i, :] = pcl[cluster_labels == human_id, :3].mean(axis=0)
+        return human_poses, pcl[cluster_labels >= 0, :4]
+
     def detection_loop(self):
         print('Waiting lidar frames')
         self.tf_frames_event.wait()
         self.destroy_subscription(self.tf_sub)
         print('Frames have been recieved. Lidar topics subscribed...')
-        self.sync = ApproximateTimeSynchronizer([item[1] for item in self.lidar_sub.items()], queue_size=10, slop=0.2)
+        self.sync = ApproximateTimeSynchronizer([item[1] for item in self.lidar_sub.items()], queue_size=10, slop=0.4)
         self.sync.registerCallback(self.read_lidar)
+        human_poses = []
         while(rclpy.ok()):
             if not self.curr_lidar.full(): continue
             input_lidar_info = self.curr_lidar.get()
             pcl = input_lidar_info['data']
             pcl = pcl_voxel(pcl, voxel_size=0.12)
-            cluster_idxs, pytorch_tensor, center_arr = split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=50, return_pcl_gpu=True)
+            if(len(human_poses) == 0):
+                cluster_idxs, pytorch_tensor, center_arr = split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=40, return_pcl_gpu=True)
+                self.publish_pcl_clusters(pcl, cluster_idxs)
+            else:
+                pytorch_tensor, center_arr = focused_split_to_boxes(pcl, human_poses, cluster_shape=2048)
+            center_arr = np.concatenate([center.reshape(-1, 3) for center in center_arr])
             if(pytorch_tensor == None):
+                human_poses = []
                 continue
             yout, _ = self.det_model(pytorch_tensor)
             pytorch_tensor, yout = pytorch_tensor.detach().cpu().numpy(), yout.detach().cpu().numpy()
-            self.publish_human_seg(pytorch_tensor, center_arr, pcl, yout)
-            self.publish_pcl_clusters(pcl, cluster_idxs)
-            self.publish_human_point(pytorch_tensor, center_arr, pcl, yout)
-            # print(pytorch_tensor.shape)
-            # fig = plt.figure()
-            # ax = fig.add_subplot(111, projection='3d')
-            # for tensor in pytorch_tensor:
-            #     tensor = tensor.detach().cpu().numpy()
-            #     ax.scatter(tensor[:, 0], tensor[:, 1], tensor[:, 2])
-            # plt.savefig('3D_scatter_plot.png')
+            human_poses, human_points = self.get_human_poses(pytorch_tensor, center_arr, pcl, yout)
+            
+            self.publish_humans(human_poses)
+            self.publish_human_seg(human_points)
+        
+
 def main():
     rclpy.init()        # initialize ros2
     model = PointNetSeg(1).to('cuda:0').eval()      # initialize model
-    model = Pointet2().to('cuda:0').eval() 
-    model.load_state_dict(torch.load('./results/E11_v01.05.pt'))
-    # model.load_state_dict(torch.load('./results/E11_v00.07.pt'))
+    model.load_state_dict(torch.load('./results/E35_v00.11.pt'))
+    # model = Pointet2().to('cuda:0').eval() 
+    # model.load_state_dict(torch.load('./results/E11_v01.07.pt'))
     human = HumanDetector(['lidar_1', 'lidar_2'], model)        # initialize Human detector node
     human.start_detection()      # start detection
     rclpy.spin(human)           # start ros2 node
     rclpy.shutdown()        # end ros2 session
+
 if __name__ == "__main__":
     main()
 

@@ -160,10 +160,10 @@ def feature_transform_reguliarzer(trans, device='cuda:0'):
 if __name__ == '__main__':
     #x_rand = torch.Tensor(np.random.random((32, 1024, 3)) * 300).to(device=device)
     device = 'cuda:0'
-    model = PointNetClass(1).to(device)
+    model = PointNetSeg(1).to(device)
     summary(model, (2048, 3))
     model = PointNetSeg(1, device).to(device)
     for i in range(100):
         x_rand = torch.Tensor(np.random.random((32, 1024+i, 3)) * 300).to(device=device)
-        yout, _, _= model(x_rand)
+        yout, _= model(x_rand)
         print(yout.size())
