@@ -1,35 +1,75 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from plane_detector import readPlanes, gr_planes_voxel, compute_local_pca, Plane, plot_plane_area
-from o3d_funcs import load_pcl, o3d_to_numpy, plot_frame, pcl_voxel
+from o3d_funcs import o3d_to_numpy, plot_frame, pcl_voxel
+from pcl_utils import load_pcl
 from sklearn.covariance import MinCovDet
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KDTree
 from scipy.spatial.transform import Rotation
+from time import time
 
 
 class robustNormalEstimator:
+    """
+    This is a robust normal estimator class that removes outliers and then calculates
+    PCA  
+    """
     def estimate_itter_monte_carlo(self, prob_in_det, out_rate):
+        """
+        Calculates the number of itterations needed to find the best minimal subset
+        from which the best fitted plane can be calulcated. It uses mode carclo probabilistic 
+        approach.
+
+        @param prob_in_det:  The required probability of fidning the best minimal subset
+        @param out_rate: outliers probability in dataset
+        @return: the number of iterations
+        """
         num_itter = np.log10(1 - prob_in_det) / np.log10(1 - (1 - out_rate)**3)
         return np.int32(num_itter)
 
-    def get_max_con_sub(self, neibs_set, prob_in_det=0.99, out_rate=0.03):
+    def get_max_con_sub(self, neibs_set, prob_in_det=0.99, out_rate=0.2):
+        """
+        Gets the maximum consistent set of a neighborhood of points. The maximum consistent
+        set of half of points that can be best expressed with a plane.
+        
+        @param neibs_set: the neighborhood set
+        @param prob_in_det:  The required probability of fidning the best minimal subset
+        @param out_rate: outliers probability in dataset
+        @return: the maximum consistent set and the normal of the best fitted plane
+        """
         num_itter = self.estimate_itter_monte_carlo(prob_in_det, out_rate)
         min_set = []
         min_var = 1e10
         out_n = []
         for i in range(num_itter):
-            h0 = neibs_set[np.random.choice(neibs_set.shape[0], 3, replace=False)]
-            n = np.cross(h0[0] - h0[1], h0[0] - h0[2])
-            n = n / np.linalg.norm(n)
-            l0 = np.dot((neibs_set - np.mean(neibs_set, axis=0)), n.reshape(3, 1)).var()
-            if l0 < min_var:
-                min_set = h0
-                min_var = l0
-                out_n = n
+            h0 = neibs_set[np.random.choice(neibs_set.shape[0], 3, replace=False)]      #h0: pick random 3 points
+            n = np.cross(h0[0] - h0[1], h0[0] - h0[2])              # normal vector of h0
+            n = n / np.linalg.norm(n)                   # normalie normal vector of h0
+            ods = np.dot((neibs_set - np.mean(h0, axis=0)), n.reshape(3, 1)).reshape(-1, ) # calculate the projections 
+            max_set_cand_idxs = np.argsort(ods)[:ods.shape[0] // 2]     # sort them and keep half
+            # calculate the normal vector of candidate subset
+            max_set_cand = neibs_set[max_set_cand_idxs]
+            max_set_cand = max_set_cand - max_set_cand.mean(axis=0)
+            eigv, eigvec = np.linalg.eig(np.cov(max_set_cand.T))
+            smallest_eigenvalue_idx = np.argmin(eigv)
+            normal_vector = eigvec[:, smallest_eigenvalue_idx]
+            # keep the minimum eigenvalue and the corresponding normal vector
+            if eigv.min() < min_var:            
+                min_set = max_set_cand
+                min_var = eigv.min()
+                out_n = normal_vector
         return min_set, out_n
 
     def remove_outlier(self, neibs_set, neib_sub, plane_nrm):
+        """
+        Uses Robust-z score based on robust statistics to remove outliers.
+
+        @param neibs_set: the neighbohood of points
+        @param neib_sub: the maximum consisten subset
+        @param plane_nrm: outliers probability in dataset
+        @return: the maximum consistent set and the normal of the best fitted plane
+        """
         ods = np.dot((neibs_set - np.mean(neib_sub, axis=0)), plane_nrm.reshape(3, 1))
         rzs = np.abs((ods - np.median(ods))) / (1.4826 * np.median(np.abs(ods - np.median(ods))) + 1e-10)
         filtered_p = neibs_set[rzs.reshape(-1, ) < 2.5]
@@ -41,18 +81,12 @@ class robustNormalEstimator:
         distances = np.zeros((points.shape[0], ))
         eigv_ratio = np.zeros((points.shape[0], )) + 1
         for i, point in enumerate(points):
-            for j in range(1, 4):
-                dists, neib_idxs = tree.query([point], k= k * j)
-                distances[i] = np.max(dists)
-                neib_idxs = neib_idxs.reshape(-1, )
-                #neib_idxs = neib_idxs[neib_idxs != i]
-                neibs_set = points[neib_idxs]
-                neib_sub, plane_nrm = self.get_max_con_sub(neibs_set)
-                filtered_neibs = self.remove_outlier(neibs_set, neib_sub, plane_nrm) - point
-                if filtered_neibs.shape[0] > k / 2:
-                    break
-            if filtered_neibs.shape[0] < 3:
-                    continue
+            dists, neib_idxs = tree.query([point], k=k)
+            distances[i] = np.max(dists)
+            neib_idxs = neib_idxs.reshape(-1, )
+            neibs_set = points[neib_idxs]
+            neib_sub, plane_nrm = self.get_max_con_sub(neibs_set)
+            filtered_neibs = self.remove_outlier(neibs_set, neib_sub, plane_nrm) - point
             pca = PCA(n_components=3)
             pca.fit(filtered_neibs)        
             normals[i, :] = pca.components_[np.argmin(pca.explained_variance_)]
@@ -152,11 +186,14 @@ class customDetector:
         return planes
 
 if __name__ == '__main__':
-    pcl = o3d_to_numpy(load_pcl('../datasets/plane_detection_dataset/box.bin'))
+    pcl = load_pcl('../datasets/plane_detection_dataset/box.bin')
     pcl = pcl[np.linalg.norm(pcl, axis=1)<20, :]
     #rot_mat = Rotation.from_euler('xyz', [45, 0, 0]).as_matrix()
     #pcl = np.dot(pcl, rot_mat.T)
     pcl = pcl_voxel(pcl, 0.2)
     det = customDetector()
+    t0 = time()
     planes = det.detectPlanes(pcl)
+    t1 = time()
+    print(t1 - t0, pcl.shape)
     plot_plane_area(pcl, planes)
