@@ -1,8 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from plane_detector import readPlanes, gr_planes_voxel, compute_local_pca, Plane, plot_plane_area
-from o3d_funcs import o3d_to_numpy, plot_frame, pcl_voxel
-from pcl_utils import load_pcl
+import sys
+sys.path.insert(0, '../')
+from utils.plane_detector_utils import readPlanes, gr_planes_voxel, compute_local_pca, Plane, plot_plane_area
+from utils.o3d_funcs import o3d_to_numpy, plot_frame, pcl_voxel
+from utils.pcl_utils import load_pcl
 from sklearn.covariance import MinCovDet
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KDTree
@@ -52,7 +54,7 @@ class robustNormalEstimator:
             max_set_cand_idxs = np.argsort(ods, axis=1)[:, :ods.shape[1] // 2]     # sort them and keep half
             max_set_cand =  neibs_set[np.arange(len(max_set_cand_idxs))[:, None], max_set_cand_idxs]
             max_set_cand = max_set_cand - np.mean(max_set_cand, axis=1, keepdims=True)
-            num_workers = min(cpu_count(), len(max_set_cand))
+            num_workers = min(cpu_count()//2, len(max_set_cand))
             with Pool(num_workers) as p:
                 pca_results = np.concatenate(p.map(self.pca_worker, max_set_cand), axis=0)
             eigvalues = pca_results[:, 0]
@@ -130,14 +132,14 @@ class robustNormalEstimator:
         dists, neib_idxs = tree.query(points, k=k)
         distances = np.max(dists, axis=1)
         neibs_set = points[neib_idxs]
-        neib_sub, plane_nrm = self.get_max_con_sub(neibs_set)
+        neib_sub, plane_nrm = self.get_max_con_sub_v2(neibs_set)
         outliers = self.get_outlier(neibs_set, neib_sub, plane_nrm)
         # merge into a list each neighborhood
         list_arr = []
         for i, point in enumerate(points):
             list_arr.append(neibs_set[i][~outliers[i]] - point)
         # parallel calculation of PCA for evey neighborhood
-        num_workers = min(cpu_count(), len(list_arr))
+        num_workers = min(cpu_count()//2, len(list_arr))
         with Pool(num_workers) as p:
             pca_results = np.concatenate(p.map(self.pca_worker, list_arr), axis=0)
         eigv_ratio = pca_results[:, 0]
@@ -157,9 +159,13 @@ class customDetector:
         t0 = time()
         normals, dists, eigv_ratio = self.rpca.robustNormalEstimation(pcl, self.k)
         t1 = time()
-        print(t1 - t0)
+        print(t1-t0)
         groups = self.generateRegions(pcl, normals, eigv_ratio, dists)
+        t2 = time()
+        print(t2-t1)
         planes = self.estimatePlanes(pcl, normals, groups)
+        t3 = time()
+        print(t3-t2)
         return planes
         
     def normal_test(self, group, cands):

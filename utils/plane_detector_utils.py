@@ -5,11 +5,11 @@ from sklearn.linear_model import RANSACRegressor, LinearRegression
 from scipy.spatial.distance import cdist
 import matplotlib.pyplot as plt
 from functools import reduce
-from o3d_funcs import pcl_voxel
+from utils.o3d_funcs import pcl_voxel
 import struct
 import ezdxf
 from scipy.spatial import ConvexHull
-from RobustNormalEstimation import robustNormalEstimation
+from utils.RobustNormalEstimation import robustNormalEstimation
 
 
 class Plane:
