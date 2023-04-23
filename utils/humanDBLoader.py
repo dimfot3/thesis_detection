@@ -19,9 +19,10 @@ class humanDBLoader(Dataset):
         self.augmentator = Augmentator(remove_p=0.3, noise_std=0.08, add_points_p=0.05, rot_prob=[0.1, 0.6, 0.2])
         
     def __len__(self):
-        return self.batch_num
+        return self.batch_num // 3
 
     def __getitem__(self, idx):
+        idx = idx * 3
         start_idx, end_idx = idx * self.batch_size, min((idx + 1) * self.batch_size, self.batch_num * self.batch_size)
         splitted_pcl, splitted_ann, centers = self.data_file['pcls'][start_idx:end_idx], \
                                         self.data_file['annotations'][start_idx:end_idx], \

@@ -15,15 +15,16 @@ def objective(trial):
     args['lr'] = trial.suggest_float('lr', 1e-5, 1e-1, log=True)
     args['lr_step'] = trial.suggest_int('lr_step', 5, 35, 2)
     args['lr_decay'] = trial.suggest_float('lr_decay', 0.2, 0.8)
-    args['batch_size'] = trial.suggest_int('batch_size', 16, 64, 2)
-    args['feat_reg_eff'] = trial.suggest_float('feat_reg_eff', 1e-5, 1e-1, log=True)
+    args['batch_size'] = 4 #trial.suggest_int('batch_size', 16, 64, 2)
+    # args['feat_reg_eff'] = trial.suggest_float('feat_reg_eff', 1e-5, 1e-1, log=True)
     args['btch_momentum'] = trial.suggest_float('btch_momentum', 0.2, 0.8)
     args['epochs'] = 50
+    args['model'] = 'Pointnet2'
     args['online'] = False
     args['visualization'] = False
     args['init_weights'] = None
     args['save_model'] = False
-    args['stop_counter'] = 4
+    args['stop_counter'] = 3
     args['valid_freq'] = 3
     args['device'] = f'cuda:{gpu_idx}'
     _, best_val_f1 = main(args)
@@ -31,9 +32,9 @@ def objective(trial):
     return best_val_f1
     
 if __name__ == '__main__':
-    study = optuna.create_study(storage='sqlite:///results/tuning.db', study_name='tuning1', \
+    study = optuna.create_study(storage='sqlite:///results/tuningpoint2.db', study_name='tuning', \
                                 load_if_exists=True, direction='maximize')
-    n_gpus = 2
+    n_gpus = 1
     for i in range(n_gpus):
         gpu_queue.put(i)
     study.optimize(objective, n_trials=300, n_jobs=n_gpus)
