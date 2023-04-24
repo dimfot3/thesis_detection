@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 sys.path.insert(0, '../')
+sys.path.insert(0, './')
 from utils.plane_detector_utils import readPlanes, gr_planes_voxel, compute_local_pca, Plane, plot_plane_area
 from utils.o3d_funcs import o3d_to_numpy, plot_frame, pcl_voxel
 from utils.pcl_utils import load_pcl
@@ -54,9 +55,7 @@ class robustNormalEstimator:
             max_set_cand_idxs = np.argsort(ods, axis=1)[:, :ods.shape[1] // 2]     # sort them and keep half
             max_set_cand =  neibs_set[np.arange(len(max_set_cand_idxs))[:, None], max_set_cand_idxs]
             max_set_cand = max_set_cand - np.mean(max_set_cand, axis=1, keepdims=True)
-            num_workers = min(cpu_count()//2, len(max_set_cand))
-            with Pool(num_workers) as p:
-                pca_results = np.concatenate(p.map(self.pca_worker, max_set_cand), axis=0)
+            pca_results = np.apply_along_axis(self.pca_worker, 1, arr=max_set_cand.reshape(max_set_cand.shape[0], -1))
             eigvalues = pca_results[:, 0]
             eigvec = pca_results[:, 1:]
             min_set[eigvalues < min_var] = max_set_cand[eigvalues < min_var]
@@ -85,9 +84,9 @@ class robustNormalEstimator:
         @param out_rate: outliers probability in dataset
         @return: the maximum consistent set and the normal of the best fitted plane
         """
-        num_workers = min(cpu_count(), len(neibs_set))
+        num_workers = min(cpu_count() // 2, len(neibs_set))
         with Pool(num_workers) as p:
-            results = np.concatenate(p.map(self.ransac_plane, neibs_set), axis=0)
+            results = np.concatenate(p.map(self.ransac_plane, np.copy(neibs_set)), axis=0)
         out_normals = results[:, :3]
         min_set = neibs_set[np.arange(len(results))[:, None], results[:, 3:].astype('int')]
         return min_set, out_normals
@@ -106,6 +105,7 @@ class robustNormalEstimator:
         return rzs > 2.5
     
     def pca_worker(self, arr):
+        arr = arr.reshape(-1, 3)
         # pca = PCA(n_components=3, svd_solver='full')
         # pca.fit(arr)
         # results = np.zeros((1, 4))
@@ -119,9 +119,9 @@ class robustNormalEstimator:
         explained_variance_ratio = eigenvalues / np.sum(eigenvalues)
         min_explained_variance_ratio = np.min(explained_variance_ratio)
         min_eigenvector = eigenvectors[:, np.argmin(explained_variance_ratio)]
-        results = np.zeros((1, 4))
-        results[0, 0] = min_explained_variance_ratio / np.sum(explained_variance_ratio)
-        results[0, 1:] = min_eigenvector
+        results = np.zeros((4, ))
+        results[0] = min_explained_variance_ratio / np.sum(explained_variance_ratio)
+        results[1:] = min_eigenvector
         return results
     
     def robustNormalEstimation(self, points, k=10):
@@ -132,16 +132,15 @@ class robustNormalEstimator:
         dists, neib_idxs = tree.query(points, k=k)
         distances = np.max(dists, axis=1)
         neibs_set = points[neib_idxs]
-        neib_sub, plane_nrm = self.get_max_con_sub_v2(neibs_set)
+        neib_sub, plane_nrm = self.get_max_con_sub(neibs_set)
         outliers = self.get_outlier(neibs_set, neib_sub, plane_nrm)
         # merge into a list each neighborhood
         list_arr = []
         for i, point in enumerate(points):
             list_arr.append(neibs_set[i][~outliers[i]] - point)
+        print(neib_sub.shape)
         # parallel calculation of PCA for evey neighborhood
-        num_workers = min(cpu_count()//2, len(list_arr))
-        with Pool(num_workers) as p:
-            pca_results = np.concatenate(p.map(self.pca_worker, list_arr), axis=0)
+        pca_results = np.apply_along_axis(self.pca_worker, 1, arr=neib_sub.reshape(neib_sub.shape[0], -1))
         eigv_ratio = pca_results[:, 0]
         normals = pca_results[:, 1:]
         direc = np.sum(-points * normals, axis=1)
@@ -246,7 +245,7 @@ class customDetector:
         return planes
 
 if __name__ == '__main__':
-    pcl = load_pcl('../datasets/plane_detection_dataset/bedroom64.bin')
+    pcl = load_pcl('./datasets/plane_detection_dataset/bedroom64.bin')
     pcl = pcl[np.linalg.norm(pcl, axis=1)<20, :]
     pcl = pcl_voxel(pcl, 0.3)
     det = customDetector()

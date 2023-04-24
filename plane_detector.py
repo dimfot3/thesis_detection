@@ -113,7 +113,7 @@ class PlaneDetector(Node):
             if not self.curr_lidar.full(): continue
             input_lidar_info = self.curr_lidar.get()
             pcl = input_lidar_info['data']
-            pcl = pcl_voxel(pcl, voxel_size=0.12)
+            pcl = pcl_voxel(pcl, voxel_size=0.3)
             print('okk')
             planes = self.detector.detectPlanes(pcl)
             print('okk')
