@@ -294,12 +294,12 @@ class PointNetFeaturePropagation(nn.Module):
         return new_points
 
 class Pointet2(nn.Module):
-    def __init__(self):
+    def __init__(self, radius=[0.2, 0.3, 0.4, 0.8]):
         super(Pointet2, self).__init__()
-        self.sa1 = PointNetSetAbstraction(512, 0.2, 32, 3 + 3, [32, 32, 64], False)
-        self.sa2 = PointNetSetAbstraction(256, 0.3, 32, 64 + 3, [64, 64, 128], False)
-        self.sa3 = PointNetSetAbstraction(64, 0.4, 32, 128 + 3, [128, 128, 256], False)
-        self.sa4 = PointNetSetAbstraction(16, 0.8, 32, 256 + 3, [256, 256, 512], False)
+        self.sa1 = PointNetSetAbstraction(512, radius[0], 32, 3 + 3, [32, 32, 64], False)
+        self.sa2 = PointNetSetAbstraction(256, radius[1], 32, 64 + 3, [64, 64, 128], False)
+        self.sa3 = PointNetSetAbstraction(64, radius[2], 32, 128 + 3, [128, 128, 256], False)
+        self.sa4 = PointNetSetAbstraction(16, radius[3], 32, 256 + 3, [256, 256, 512], False)
         self.fp4 = PointNetFeaturePropagation(768, [256, 256])
         self.fp3 = PointNetFeaturePropagation(384, [256, 256])
         self.fp2 = PointNetFeaturePropagation(320, [256, 128])
@@ -333,7 +333,7 @@ class Pointet2(nn.Module):
 
 if __name__ == '__main__':
     device = 'cuda:0'
-    model = Pointet2().to(device)
+    model = Pointet2(radius=[0.2, 0.3, 0.4, 0.8]).to(device)
     x_rand = torch.Tensor(np.random.random((3, 2048, 3)) * 50).to(device=device)
     yout = model(x_rand)
     summary(model, (2048, 3))

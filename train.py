@@ -136,7 +136,7 @@ def main(args):
         loss = torch.nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.Tensor([np.log10(9.7796) + 1])).to(args['device'])
         optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'], weight_decay=args['l2coef'])
     elif(args['model_name'] == 'Pointnet2'):
-        model = Pointet2().to(args['device'])
+        model = Pointet2(args['p2_range']).to(args['device'])
         loss = torch.nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.Tensor([np.log10(9.7796) + 1])).to(args['device'])
         optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'], weight_decay=args['l2coef'])
     # loading weights for the model
