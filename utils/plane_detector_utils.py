@@ -263,7 +263,7 @@ def compute_convex_hull_on_plane(pcl, planes):
     areas = []
     for plane in planes:
         projected_points = project_points_to_plane(pcl, plane)
-        hull = ConvexHull(projected_points[:, :2])
+        hull = ConvexHull(projected_points[:, :2], qhull_options='QG4')
         areas.append(projected_points[hull.vertices])
     return areas
 
@@ -278,7 +278,7 @@ def plot_plane_area(pcl, planes):
         ax.scatter(pcl[planes[i].inliers, 0], pcl[planes[i].inliers, 1], pcl[planes[i].inliers, 2])
         ax.scatter(pcl[planes[i].inliers, 0], pcl[planes[i].inliers, 1], pcl[planes[i].inliers, 2])
         # ax.quiver(pcl[planes[i].inliers, 0].mean(), pcl[planes[i].inliers, 1].mean(), pcl[planes[i].inliers, 2].mean(),\
-        #            planes[i].normal[0], planes[i].normal[1], planes[i].normal[2], length=1.5, linewidths=5)
+        #            (-1) * planes[i].normal[0], (-1) * planes[i].normal[1], (-1) * planes[i].normal[2], length=1.5, linewidths=5)
         inlier_max = np.max([inlier_max, np.abs(pcl[planes[i].inliers]).max()])
     plt.show()
 

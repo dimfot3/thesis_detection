@@ -44,7 +44,7 @@ class robustNormalEstimator:
         @return: the maximum consistent set and the normal of the best fitted plane
         """
         num_itter = self.estimate_itter_monte_carlo(prob_in_det, out_rate)
-        min_set = np.zeros((neibs_set.shape[0], 5, 3))
+        min_set = np.zeros((neibs_set.shape[0], neibs_set.shape[1] // 2, 3))
         min_var = np.zeros(neibs_set.shape[0]) + 100
         out_normals = np.zeros((neibs_set.shape[0], 3))
         for i in range(num_itter):
@@ -61,34 +61,6 @@ class robustNormalEstimator:
             min_set[eigvalues < min_var] = max_set_cand[eigvalues < min_var]
             out_normals[eigvalues < min_var] = eigvec[eigvalues < min_var]
             min_var[eigvalues < min_var] = eigvalues[eigvalues < min_var]
-        return min_set, out_normals
-    
-    def ransac_plane(self, points):
-        ransac = RANSACRegressor(min_samples=3, max_trials=6)
-        ransac.fit(points[:, :2], points[:, 2])
-        normal_vec = np.array([ransac.estimator_.coef_[0], ransac.estimator_.coef_[1], -1])
-        distances = np.abs(points[:, 0] * normal_vec[0] + points[:, 1] * normal_vec[1] + points[:, 2] * normal_vec[2] + \
-            ransac.estimator_.intercept_) / np.linalg.norm(normal_vec)
-        resutls = np.zeros((1, 3+points.shape[0]//2))
-        resutls[0, :3] = normal_vec
-        resutls[0, 3:] = distances.argsort()[:points.shape[0]//2]
-        return resutls
-
-    def get_max_con_sub_v2(self, neibs_set):
-        """
-        Gets the maximum consistent set of a neighborhood of points. The maximum consistent
-        set of half of points that can be best expressed with a plane.
-        
-        @param neibs_set: the neighborhood set
-        @param prob_in_det:  The required probability of fidning the best minimal subset
-        @param out_rate: outliers probability in dataset
-        @return: the maximum consistent set and the normal of the best fitted plane
-        """
-        num_workers = min(cpu_count() // 2, len(neibs_set))
-        with Pool(num_workers) as p:
-            results = np.concatenate(p.map(self.ransac_plane, np.copy(neibs_set)), axis=0)
-        out_normals = results[:, :3]
-        min_set = neibs_set[np.arange(len(results))[:, None], results[:, 3:].astype('int')]
         return min_set, out_normals
 
     def get_outlier(self, neibs_set, neib_sub, plane_nrm):
@@ -120,7 +92,7 @@ class robustNormalEstimator:
         min_explained_variance_ratio = np.min(explained_variance_ratio)
         min_eigenvector = eigenvectors[:, np.argmin(explained_variance_ratio)]
         results = np.zeros((4, ))
-        results[0] = min_explained_variance_ratio / np.sum(explained_variance_ratio)
+        results[0] = min_explained_variance_ratio
         results[1:] = min_eigenvector
         return results
     
@@ -138,7 +110,6 @@ class robustNormalEstimator:
         list_arr = []
         for i, point in enumerate(points):
             list_arr.append(neibs_set[i][~outliers[i]] - point)
-        print(neib_sub.shape)
         # parallel calculation of PCA for evey neighborhood
         pca_results = np.apply_along_axis(self.pca_worker, 1, arr=neib_sub.reshape(neib_sub.shape[0], -1))
         eigv_ratio = pca_results[:, 0]
@@ -149,22 +120,18 @@ class robustNormalEstimator:
 
 class customDetector:
     def __init__(self):
-        self.k = 10
-        self.sim_th = 0.90
+        self.k = 20
+        self.sim_th = 0.9
         self.cand_score = 0.01
         self.rpca = robustNormalEstimator()
     
     def detectPlanes(self, pcl):
-        t0 = time()
         normals, dists, eigv_ratio = self.rpca.robustNormalEstimation(pcl, self.k)
-        t1 = time()
-        print(t1-t0)
         groups = self.generateRegions(pcl, normals, eigv_ratio, dists)
-        t2 = time()
-        print(t2-t1)
-        planes = self.estimatePlanes(pcl, normals, groups)
-        t3 = time()
-        print(t3-t2)
+        print(len(groups), np.concatenate(groups).shape, np.unique(np.concatenate(groups)).shape)
+        planes = self.edgeReconstruction(pcl, normals, groups)
+        total_in = np.concatenate([plane.inliers for plane in planes])
+        print(total_in.shape, np.unique(total_in).shape)
         return planes
         
     def normal_test(self, group, cands):
@@ -181,7 +148,7 @@ class customDetector:
         projection_group = np.abs(np.dot(group_points - group_center, group_normal).reshape(-1, ))
         projection_cand = np.abs(np.dot(cands_points - group_center, group_normal).reshape(-1, ))
         rz_scores = np.abs((projection_cand - np.median(projection_group))) / (1.4826 * np.median(np.abs(projection_group - np.median(projection_group))+ 1e-10))
-        return rz_scores < 2.5
+        return rz_scores < 3
 
     def point_to_point_test(self, group_points, cands_points):
         tree = KDTree(group_points)
@@ -192,41 +159,35 @@ class customDetector:
         rz_scores = np.abs((cands_dists - np.median(group_dists))) / (1.4826 * np.median(np.abs(group_dists - np.median(group_dists))+ 1e-10))
         return rz_scores < 2.5
 
-
     def generateRegions(self, pcl, normals, eigv_ratio, distances):
-        uncls = np.array([i for i in range(pcl.shape[0]) if (np.abs(normals[i]).sum() > 0) and (eigv_ratio[i] < self.cand_score)])
-        uncls = np.argsort(distances)
-        #distances = distances[uncls]
+        uncls = np.array([i for i in range(pcl.shape[0]) if ((np.abs(normals[i]).sum() > 0) and (eigv_ratio[i] < self.cand_score))])
+        uncls = uncls[np.argsort(distances[uncls])]
         groups = []
-        while uncls.shape[0] > self.k:
+        while uncls.shape[0] > self.k:      # loop of cluster birth
             new_group = np.array([uncls[0]])
             uncls = np.delete(uncls, 0)
-            while uncls.shape[0] > self.k:
+            while uncls.shape[0] > self.k:     # loop of cluster expansion
                 tree = KDTree(pcl[uncls])
-                if len(new_group) > 1:
+                if len(new_group) > 1:          # adaptive radius search
                     radius = np.median(distances[new_group]) + 2.5 * 1.4826 * np.median(distances[new_group] - np.abs(np.median(distances[new_group])))
                     neibs = np.unique(np.concatenate(tree.query_radius(pcl[new_group], r=radius)).reshape(-1, ))
-                else:
-                    neibs = tree.query(pcl[new_group], k=self.k)[1].reshape(-1, )
+                else: neibs = tree.query(pcl[new_group], k=self.k)[1].reshape(-1, )
                 if neibs.shape[0] == 0: break
-                test_th = self.normal_test(normals[new_group].reshape(-1, 3), normals[uncls[neibs]].reshape(-1, 3))
-                if len(new_group) > 1:
-                    test_th &= self.points_plane_test(pcl[new_group], normals[new_group].reshape(-1, 3), pcl[uncls[neibs]].reshape(-1, 3))
+                test_th = self.normal_test(normals[new_group].reshape(-1, 3), normals[uncls[neibs]].reshape(-1, 3)) # normal test
+                if len(new_group) > self.k:
+                    test_th &= self.points_plane_test(pcl[new_group], normals[new_group].reshape(-1, 3), pcl[uncls[neibs]].reshape(-1, 3))  # plane test
                 new_group = np.append(new_group, uncls[neibs[test_th]])
                 uncls = np.delete(uncls, neibs[test_th])
                 if (not (test_th).sum()): break
             if(len(new_group) > self.k): groups.append(new_group)
         return groups
 
-    def estimatePlanes(self, pcl, normals, groups):
+    def edgeReconstruction(self, pcl, normals, groups):
         planes = []
-        clsf_idxs = np.concatenate(groups)
-        uclsf_idxs = np.array([i for i in range(pcl.shape[0]) if i not in clsf_idxs], dtype='int')
-        clsf_cls = np.concatenate([[i]*len(group) for i, group in enumerate(groups)])
+        clsf_idxs = np.concatenate(groups)      # list of classified idxs
+        uncls_idxs = np.array([i for i in range(pcl.shape[0]) if i not in clsf_idxs], dtype='int')      # list of unclassified idxs
         group_lens = [len(group) for group in groups]
-        sorted_group_idxs = np.argsort(group_lens)
-        group_status = [0 for i in groups]
-        uncls_idxs = np.arange(pcl.shape[0])
+        sorted_group_idxs = np.argsort(group_lens)[::-1]
         for g_idxs in sorted_group_idxs:
             curr_group = groups[g_idxs]
             curr_plane = Plane(inliers=[], normal=np.median(normals[curr_group], axis=0))
@@ -236,32 +197,24 @@ class customDetector:
                 if(cand_idxs.shape[0] == 0): break
                 passed_idxs = cand_idxs[self.point_to_point_test(pcl[curr_group], pcl[cand_idxs])]
                 if(passed_idxs.shape[0] == 0): break
-                p_uclsf_idxs = np.intersect1d(uclsf_idxs, passed_idxs).reshape(-1, )
-                if(p_uclsf_idxs.shape[0] == 0): break
-                curr_group = np.append(curr_group, p_uclsf_idxs)
-                uncls_idxs = np.delete(uncls_idxs, [i for i, idx in enumerate(uncls_idxs) if idx in p_uclsf_idxs])
+                curr_group = np.append(curr_group, passed_idxs)
+                uncls_idxs = np.delete(uncls_idxs, [i for i, idx in enumerate(uncls_idxs) if idx in passed_idxs])
             curr_plane.inliers = curr_group
             planes.append(curr_plane)
         return planes
 
 if __name__ == '__main__':
-    pcl = load_pcl('./datasets/plane_detection_dataset/bedroom64.bin')
+    pcl = load_pcl('../datasets/plane_detection_dataset/museum.bin')
     pcl = pcl[np.linalg.norm(pcl, axis=1)<20, :]
-    pcl = pcl_voxel(pcl, 0.3)
+    pcl = pcl_voxel(pcl, 0.2)
+    rot_mat = Rotation.from_euler('xyz', [90, 0, 0] , degrees=True).as_matrix()
+    pcl = np.dot(pcl, rot_mat.T)
     det = customDetector()
     t0 = time()
     planes = det.detectPlanes(pcl)
+    print(len(planes))
     t1 = time()
     print(t1 - t0, pcl.shape)
     plot_plane_area(pcl, planes)
 
-    # A, B, C, D = 1, 3, 4, 10
-    # x, y = np.random.rand(100)*5, np.random.rand(100)*5
-    # z = - A/C* x - B/C * y - D
-    # input_arr = np.stack([x, y, z], axis=1)
-    # rest = robustNormalEstimator()
-    # normals, dists, eigv_ratio = rest.robustNormalEstimation(input_arr, 10)
-    # ax = plt.subplot(1, 1, 1, projection = '3d')
-    # ax.scatter(x, y, z)
-    # ax.quiver(input_arr[:, 0], input_arr[:, 1], input_arr[:, 2], normals[:, 0], normals[:, 1], normals[:, 2])
-    # plt.show()
+  
