@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import sys
 sys.path.insert(0, '../')
 sys.path.insert(0, './')
-from utils.plane_detector_utils import readPlanes, gr_planes_voxel, compute_local_pca, Plane, plot_plane_area
+from utils.plane_detector_utils import readPlanes, gr_planes_voxel, Plane, plot_plane_area
 from utils.o3d_funcs import o3d_to_numpy, plot_frame, pcl_voxel
 from utils.pcl_utils import load_pcl
 from sklearn.covariance import MinCovDet
