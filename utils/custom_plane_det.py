@@ -128,10 +128,8 @@ class customDetector:
     def detectPlanes(self, pcl):
         normals, dists, eigv_ratio = self.rpca.robustNormalEstimation(pcl, self.k)
         groups = self.generateRegions(pcl, normals, eigv_ratio, dists)
-        print(len(groups), np.concatenate(groups).shape, np.unique(np.concatenate(groups)).shape)
         planes = self.edgeReconstruction(pcl, normals, groups)
         total_in = np.concatenate([plane.inliers for plane in planes])
-        print(total_in.shape, np.unique(total_in).shape)
         return planes
         
     def normal_test(self, group, cands):

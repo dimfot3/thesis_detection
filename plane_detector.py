@@ -114,12 +114,9 @@ class PlaneDetector(Node):
             input_lidar_info = self.curr_lidar.get()
             pcl = input_lidar_info['data']
             pcl = pcl_voxel(pcl, voxel_size=0.3)
-            print('okk')
             planes = self.detector.detectPlanes(pcl)
-            print('okk')
             areas = compute_convex_hull_on_plane(pcl, planes)
             self.publish_planes(areas)
-            print('okk')
 
 def main():
     rclpy.init()        # initialize ros2

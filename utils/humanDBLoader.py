@@ -1,13 +1,13 @@
 import torch
 import os, sys
-sys.path.insert(0, '../')
+sys.path.insert(0, f'{os.path.dirname(os.path.realpath(__file__))}/../')
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import h5py
-from DataAugemnetations import Augmentator
+from utils.DataAugemnetations import Augmentator
 
 class humanDBLoader(Dataset):
     def __init__(self, data_path, batch_size=32, augmentation=False):
@@ -19,10 +19,10 @@ class humanDBLoader(Dataset):
         self.augmentator = Augmentator(remove_p=0.3, noise_std=0.08, add_points_p=0.05, rot_prob=[0.1, 0.6, 0.2])
         
     def __len__(self):
-        return self.batch_num // 3
+        return self.batch_num
 
     def __getitem__(self, idx):
-        idx = idx * 3
+        idx = idx
         start_idx, end_idx = idx * self.batch_size, min((idx + 1) * self.batch_size, self.batch_num * self.batch_size)
         splitted_pcl, splitted_ann, centers = self.data_file['pcls'][start_idx:end_idx], \
                                         self.data_file['annotations'][start_idx:end_idx], \
@@ -33,7 +33,7 @@ class humanDBLoader(Dataset):
 
 
 if __name__ == '__main__':
-    path = '/media/visitor1/DBStorage/Datasets/JRDB/training_format/train_data.h5py'
+    path = '/home/visitor3/workspace/Thesis/Thesis_Detection/datasets/JRDB/testing_data.h5py'
     dataset = humanDBLoader(path, batch_size=16)
     dataloader = DataLoader(dataset, batch_size=None, shuffle=True)
     human = []
