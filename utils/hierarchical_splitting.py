@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import cudf
 import numba as nb
 from cuml.cluster import HDBSCAN
+from sklearn.cluster import DBSCAN
 import cuml
 from scipy.spatial import KDTree
 from time import time
@@ -63,14 +64,18 @@ def split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=50, return_p
         tensor_arr = []
         center_arr = []
         for idxs in cluster_idxs:
+            if(len(idxs) == 1): continue
             center_arr.append(pcl[idxs].mean(axis=0))
-            tensor_arr.append(torch.tensor(pcl[idxs]).reshape(cluster_shape, 3).to('cuda:0').type(torch.cuda.FloatTensor) \
-                               - torch.Tensor(center_arr[-1]).type(torch.cuda.FloatTensor).to('cuda:0'))
-        tensor_3d = torch.stack(tensor_arr) if len(tensor_arr) > 0 else None
-        return cluster_idxs, tensor_3d, center_arr
+            tensor_arr.append(torch.tensor(pcl[idxs]).reshape(cluster_shape, 3).type(torch.FloatTensor) \
+                               - torch.Tensor(center_arr[-1]).type(torch.FloatTensor))
+        tensor_3d = torch.stack(tensor_arr) if len(tensor_arr) > 0 else torch.Tensor([])
+        return cluster_idxs, tensor_3d, np.array(center_arr).reshape(-1, 3)
     return cluster_idxs
 
-def focused_split_to_boxes(pcl, human_poses, cluster_shape=2048):
+def focused_split_to_boxes(pcl, human_poses, cluster_shape=2048, min_hum_dist=3.0):
+    dbscan = DBSCAN(eps=min_hum_dist, min_samples=2).fit(human_poses)
+    labels = np.array([label if label >= 0 else human_poses.shape[0] + i for i, label in enumerate(dbscan.labels_)])
+    human_poses = np.array([human_poses[labels == label].mean(axis=0) for label in np.unique(labels)])
     tree = KDTree(pcl)
     clustr_arr, center_arr = np.zeros((human_poses.shape[0], cluster_shape, 3)), np.zeros((human_poses.shape[0], 3))
     for i, pose in enumerate(human_poses):
@@ -78,7 +83,7 @@ def focused_split_to_boxes(pcl, human_poses, cluster_shape=2048):
         clustr_arr[i] = pcl[idxs.reshape(-1, )]
         center_arr[i] = clustr_arr[i].mean(axis=0)
         clustr_arr[i] -= center_arr[i]
-    tensor_3d = torch.Tensor(clustr_arr).type(torch.cuda.FloatTensor).to('cuda:0')
+    tensor_3d = torch.Tensor(clustr_arr).type(torch.FloatTensor)
     return tensor_3d, center_arr
 
 if __name__ == '__main__':
