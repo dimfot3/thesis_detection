@@ -23,6 +23,7 @@ class HumanDetector(Node):
         self.lidar_list = lidar_list
         self.batch_size = args['batch_size']
         self.det_thresh = args['det_thresh']
+        self.u_det_thresh = args['u_det_thresh']
         self.min_human_p = args['min_human_p']
         self.min_points_hdb = args['min_points_hdb']
         self.voxel_size = args['voxel_size']
@@ -153,7 +154,7 @@ class HumanDetector(Node):
         # filter pcl based on minimum probability score
         pcl = pcl[pcl[:, 3] > 0.2]
         if(pcl.shape[0] == 0): return np.array([]), np.array([])
-        human_poses, cluster_labels = semantic_to_instance(pcl, self.det_thresh, self.min_human_p, self.max_dist_hum)
+        human_poses, cluster_labels = semantic_to_instance(pcl, self.det_thresh, self.u_det_thresh, self.min_human_p, self.max_dist_hum)
         human_poses, cluster_labels = keep_k_det(pcl, human_poses, cluster_labels, self.max_hum)
         return human_poses, pcl[cluster_labels >= 0, :4]
 
@@ -172,6 +173,7 @@ class HumanDetector(Node):
             input_lidar_info = self.curr_lidar.get()
             pcl, pcl_time = input_lidar_info['data'], input_lidar_info['time']
             pcl = pcl_voxel(pcl, voxel_size=self.voxel_size)
+            pcl = pcl[pcl[:, 2] > 0.01]     
             # Clustering
             if(len(human_poses) == 0) or np.mod(counter, self.hdbscan_rate) == 0:       # hierarchichal clustering
                 cluster_idxs, pytorch_tensor, center_arr = split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=self.min_points_hdb, return_pcl_gpu=True)

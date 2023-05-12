@@ -1,13 +1,17 @@
-lidar_list: ['lidar_1', 'lidar_2']
+lidar_list: ['lidar_1', 'lidar_2', 'lidar_3', 'lidar_4']
 model_name: 'Pointnet2'
 weights: './results/E36_v01.17.pt'
 batch_size: 7
-det_thresh: 0.2          # minimum probability score for a point to belong to human
+det_thresh: 0.4          # minimum probability score for a point to belong to human
+u_det_thresh: 0.7          # minimum probability score for a point to belong to human
 min_human_p: 20             # minimum points to be considered valid human
-min_points_hdb: 17          # this minimum points is used for hierarchichal clustering
+min_points_hdb: 15          # this minimum points is used for hierarchichal clustering
 voxel_size: 0.1            # voxel dowsample in model's input
 max_dist_hum: 0.5           # it is used in dbscan where semantic segmnentation transforms to instance
-max_hum: 30                 # maximum number of human to detect
+max_hum: 20                 # maximum number of human to detect
 min_hum_dist_cluster: 0.2   # minimum distance for targeting clustering clusters to be merged
 hdbscan_rate: 5             # how frequently to run hdscan clustering except from targeting
 
+
+# 0.6, 0.6, 0.6, 0.7
+# 0.2, 0.2, 0.3, 0.4
