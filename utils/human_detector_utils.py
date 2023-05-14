@@ -38,11 +38,12 @@ def tfmsg_to_matrix(tf_msg):
                                                                         rotation_matrix, 1
     return translation_matrix
 
-def pcl2_to_numpy(msg, tf):
+def pcl2_to_numpy(msg, tf=None):
     pc = ros2_numpy.numpify(msg)
     points= pc['xyz']
     points = points[np.all(np.isfinite(points), axis=1)]
-    points = np.dot(points, tf[:3, :3].T) + tf[:3, 3].T
+    if(type(tf) != type(None)):
+        points = np.dot(points, tf[:3, :3].T) + tf[:3, 3].T
     return points
     
 def semantic_to_instance(pcl, det_thresh, u_det_thresh, min_human_p, max_dist_hum):
