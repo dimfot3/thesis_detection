@@ -45,14 +45,14 @@ def pcl2_to_numpy(msg, tf):
     points = np.dot(points, tf[:3, :3].T) + tf[:3, 3].T
     return points
     
-def semantic_to_instance(pcl, det_thresh, min_human_p, max_dist_hum):
+def semantic_to_instance(pcl, det_thresh, u_det_thresh, min_human_p, max_dist_hum):
     clustering = DBSCAN(eps=max_dist_hum, min_samples=min_human_p).fit(pcl[:, :3])
     cluster_labels = clustering.labels_
     human_ids = np.unique(cluster_labels[cluster_labels>=0])
     human_poses = np.zeros(shape=(0, 3))
     for i, human_id in enumerate(human_ids):
         cluster_vec = cluster_labels == human_id
-        if(pcl[cluster_vec, 3].mean() > np.clip((0.4 / 50) * (pcl[cluster_vec, 3].shape[0] - min_human_p) + det_thresh, det_thresh, 0.6)):
+        if(pcl[cluster_vec, 3].mean() > np.clip(((u_det_thresh - det_thresh) / 80) * (pcl[cluster_vec, 3].shape[0] - min_human_p) + det_thresh, det_thresh, u_det_thresh)):
             human_poses = np.append(human_poses, pcl[cluster_vec, :3].mean(axis=0).reshape(1, 3), axis=0)
         else: cluster_labels[cluster_vec] = -1
     return human_poses, cluster_labels
