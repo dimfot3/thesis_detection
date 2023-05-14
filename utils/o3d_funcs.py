@@ -285,3 +285,11 @@ def first_person_plot_kitti(pcl_file, labels_file, fov_up=15, fov_down=-15, proj
                         dtype=np.float32)  # [H,W] range (-1 is no data)
     proj_range[proj_y, proj_x] = curve
     return proj_range
+
+def pcl_gicp(pcl1, pcl2):
+    if type(pcl1) != type(np.ndarray((1,1))):
+        gicp_res = o3d.pipelines.registration.registration_icp(pcl1, pcl2, max_correspondence_distance=0.5)
+    else:
+        gicp_res = o3d.pipelines.registration.registration_icp(numpy_to_o3d(pcl1), numpy_to_o3d(pcl2), \
+            max_correspondence_distance=0.5)
+    return gicp_res

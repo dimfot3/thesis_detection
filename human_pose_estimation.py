@@ -13,18 +13,25 @@ from models.Pointnet2 import Pointet2
 import torch
 from builtin_interfaces.msg import Time
 import yaml
+from scipy.spatial import KDTree
 from utils.human_detector_utils import tfmsg_to_matrix, pcl2_to_numpy
+from utils.o3d_funcs import pcl_gicp, pcl_voxel
+from time import time
 
 
-class HumanDetector(Node):
+class HumanPoseEstimator(Node):
     def __init__(self, lidar_list, det_model, args):
-        super().__init__('human_detector')
+        super().__init__('human_pose_estim')
         self.lidar_list = lidar_list
         self.max_hum = args['max_hum']
         self.lidar_frames, self.lidar_pcl, self.lidar_times = {}, {}, {}
         self.det_model = det_model
+        self.files = ['showdown', 'standing', 'handsup2']
+        self.poses = self.load_model(self.files)
         self.tf_sub = self.create_subscription(TFMessage, '/tf', self.read_lidar_frames, 20)
-        self.hum_seg_sub = self.create_subscription(PointCloud2, '/human_seg', self.get_human_seg, 10)
+        self.det_sync = ApproximateTimeSynchronizer([Subscriber(self, PointCloud2, '/human_seg'), \
+            Subscriber(self, PointCloud2, '/human_detections')], queue_size=10, slop=0.2)
+        self.det_sync.registerCallback(self.find_human_pose)
         self.lidar_sub = {}
         for lidar in lidar_list:
             self.lidar_sub[lidar] = Subscriber(self, PointCloud2, lidar)
@@ -43,6 +50,12 @@ class HumanDetector(Node):
             self.sync = ApproximateTimeSynchronizer([item[1] for item in self.lidar_sub.items()], queue_size=10, slop=0.4)
             self.sync.registerCallback(self.read_lidar)
     
+    def load_model(self, files):
+        poses = []
+        for file in files:
+            poses.append(np.fromfile(f'models/{file}.npy', dtype='float32').reshape(-1, 3))
+        return poses
+
     def read_lidar(self, *lidar_N):
         """
         Reads all the lidar pcls and transform them to world frame.
@@ -69,11 +82,36 @@ class HumanDetector(Node):
                     continue
         return cur_msg
 
-    def get_human_seg(self, msg):
-        det_time = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        human_seg = pcl2_to_numpy(msg)
-        print(abs(det_time - self.find_closest_pcl(det_time)['time']))
+    def find_human_pose(self, human_seg, human_det):
+        det_time = human_seg.header.stamp.sec + human_seg.header.stamp.nanosec * 1e-9
+        human_seg = pcl2_to_numpy(human_seg)
+        human_det = pcl2_to_numpy(human_det)
+        matched_pcl = self.find_closest_pcl(det_time)
+        if len(matched_pcl) == 0:
+            return
+        else:
+            matched_pcl = matched_pcl['data']
+
+        # split the segmentations to humans
+        human_tree = KDTree(human_det)
+        _, ii = human_tree.query(human_seg, k=1)
+        ii = ii.reshape(-1, )
+        human_seg = [human_seg[ii == idx] for idx in np.unique(ii)]
         
+        # find the pose for each human
+        for i, human_pos in enumerate(human_det.reshape(-1, 3)):
+            sub_pcl = matched_pcl[np.linalg.norm(matched_pcl - human_pos.reshape(-1, 3), axis=1) < 3]
+            sub_pcl_tree = KDTree(sub_pcl)
+            human_seg_tree = KDTree(human_seg[i])
+            idxs = sub_pcl_tree.query_ball_tree(human_seg_tree, r=0.5)
+            logic_vector = np.array([True if len(idx) > 0 else False for idx in idxs])
+            full_human_seg = sub_pcl[logic_vector] - human_pos
+            scores = []
+            for j, pose in enumerate(self.poses):
+                # pose = pcl_voxel(pose, 0.1)
+                gicp_res = pcl_gicp(full_human_seg, pose)
+                scores.append(gicp_res.fitness)
+            print(self.files[np.argmax(scores)])
 
 def main():
     with open('config/human_det_conf.yaml', 'r') as file:
@@ -86,7 +124,7 @@ def main():
         model = PointNetSeg(1).to('cuda:0').eval()      
         model.load_state_dict(torch.load(args['weights']))
     model.eval()
-    human = HumanDetector(args['lidar_list'], model, args)
+    human = HumanPoseEstimator(args['lidar_list'], model, args)
     rclpy.spin(human)           # start ros2 node
     rclpy.shutdown()        # end ros2 session
 
