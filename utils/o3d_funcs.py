@@ -288,8 +288,9 @@ def first_person_plot_kitti(pcl_file, labels_file, fov_up=15, fov_down=-15, proj
 
 def pcl_gicp(pcl1, pcl2):
     if type(pcl1) != type(np.ndarray((1,1))):
-        gicp_res = o3d.pipelines.registration.registration_icp(pcl1, pcl2, max_correspondence_distance=0.5)
+        gicp_res = o3d.pipelines.registration.registration_icp(pcl1, pcl2, max_correspondence_distance=0.8)
     else:
-        gicp_res = o3d.pipelines.registration.registration_icp(numpy_to_o3d(pcl1), numpy_to_o3d(pcl2), \
-            max_correspondence_distance=0.5)
+        gicp_res = o3d.pipelines.registration.registration_icp(numpy_to_o3d(pcl1), numpy_to_o3d(pcl2), 0.1, np.eye(4, 4), 
+                                                               o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+                                                               o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=1000))
     return gicp_res

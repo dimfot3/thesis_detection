@@ -25,14 +25,16 @@ def merge_degenerared_clusters(labels, memberships, cluster_shape=2048):
     classes, cluster_num = np.unique(labels, return_counts=True)
     cluster_num, classes = cluster_num[classes>=0], classes[classes>=0] 
     sorted_idxs = np.argsort(cluster_num)
+    # sort classes based on number of points they have
     classes, cluster_num = classes[sorted_idxs], cluster_num[sorted_idxs]
     while True:
-        if cluster_num[0] >= cluster_shape/4:
+        if cluster_num[0] >= cluster_shape * 0.25:
             break
-        cand_class = classes[1:][cluster_num[1:] < cluster_shape]
+        cand_class = classes[1:][cluster_num[1:] < cluster_shape * 0.75]
         if len(cand_class) == 0: break
         new_classes = np.argmax(memberships[labels==classes[0], :][:, cand_class], axis=1).reshape(-1, )
         labels[labels==classes[0]] = cand_class[new_classes]
+        # sort classes again
         classes, cluster_num = np.unique(labels, return_counts=True)
         sorted_idxs = np.argsort(cluster_num)
         classes, cluster_num = classes[sorted_idxs], cluster_num[sorted_idxs]
@@ -53,7 +55,7 @@ def canonicalize_cluster(pcl, labels, memberships, cluster_shape=2048):
             new_idxs = np.setdiff1d(idxs.reshape(-1, ), curr_idxs)[:cluster_shape-curr_points.shape[0]]        
             cluster_idxs.append(np.concatenate([np.argwhere(labels==class_idx).reshape(-1, ), new_idxs], axis=0))
         else:
-            cluster_idxs.append(curr_idxs[[np.argsort(memberships[labels==class_idx, :][:, class_idx])[::-1][:cluster_shape]]])
+            cluster_idxs.append(curr_idxs[np.argsort(memberships[labels==class_idx, :][:, class_idx])[::-1][:cluster_shape]])
     return cluster_idxs
 
 def split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=50, return_pcl_gpu=False):
@@ -78,13 +80,15 @@ def focused_split_to_boxes(pcl, human_poses, cluster_shape=2048, min_hum_dist=3.
     human_poses = np.array([human_poses[labels == label].mean(axis=0) for label in np.unique(labels)])
     tree = KDTree(pcl)
     clustr_arr, center_arr = np.zeros((human_poses.shape[0], cluster_shape, 3)), np.zeros((human_poses.shape[0], 3))
+    clusters = []
     for i, pose in enumerate(human_poses):
         _, idxs = tree.query([pose], k=cluster_shape)
         clustr_arr[i] = pcl[idxs.reshape(-1, )]
+        clusters.append(idxs)
         center_arr[i] = clustr_arr[i].mean(axis=0)
         clustr_arr[i] -= center_arr[i]
     tensor_3d = torch.Tensor(clustr_arr).type(torch.FloatTensor)
-    return tensor_3d, center_arr
+    return tensor_3d, center_arr, clusters
 
 if __name__ == '__main__':
     from o3d_funcs import pcl_voxel

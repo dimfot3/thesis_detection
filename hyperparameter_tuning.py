@@ -39,12 +39,12 @@ def objective(trial):
 if __name__ == '__main__':
     # study = optuna.create_study(storage='sqlite:///results/tuningpoint2.db', study_name='tuning', \
     #                             load_if_exists=True, direction='maximize')
-    study = optuna.create_study(storage='sqlite:///results/testing.db', study_name='test', \
+    study = optuna.create_study(storage='sqlite:///results/tuning.db', study_name='tuning1', \
                                 load_if_exists=True, direction='maximize')
-    n_gpus = 1
-    for i in range(n_gpus):
-        gpu_queue.put(i)
-    study.optimize(objective, n_trials=300, n_jobs=n_gpus)
+    # n_gpus = 1
+    # for i in range(n_gpus):
+    #     gpu_queue.put(i)
+    # study.optimize(objective, n_trials=300, n_jobs=n_gpus)
     # importances
     # print(study.best_trials)
     # exit()
@@ -54,8 +54,8 @@ if __name__ == '__main__':
     # fig = optuna.visualization.plot_contour(study)
     # fig.show()
     # # parallel
-    # fig = optuna.visualization.plot_parallel_coordinate(study)
-    # fig.show()
+    fig = optuna.visualization.plot_parallel_coordinate(study)
+    fig.show()
     # # history
-    # fig = optuna.visualization.plot_optimization_history(study)
-    # fig.show()
+    fig = optuna.visualization.plot_optimization_history(study)
+    fig.show()

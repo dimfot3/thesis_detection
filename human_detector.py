@@ -179,7 +179,7 @@ class HumanDetector(Node):
                 cluster_idxs, pytorch_tensor, center_arr = split_pcl_to_clusters(pcl, cluster_shape=2048, min_cluster_size=self.min_points_hdb, return_pcl_gpu=True)
                 if(len(center_arr) > 0): center_arr = np.concatenate([center.reshape(-1, 3) for center in center_arr], axis=0)
             if(len(human_poses) > 0):                       # human targeting clustering
-                pytorch_tensor_f, center_arr_f = focused_split_to_boxes(pcl, human_poses, cluster_shape=2048, min_hum_dist=self.min_hum_dist_cluster)
+                pytorch_tensor_f, center_arr_f, _ = focused_split_to_boxes(pcl, human_poses, cluster_shape=2048, min_hum_dist=self.min_hum_dist_cluster)
                 if(center_arr_f.shape[0] > 0):
                     pytorch_tensor, center_arr = torch.concatenate([pytorch_tensor, pytorch_tensor_f], dim=0), \
                         np.append(center_arr, center_arr_f, axis=0)
