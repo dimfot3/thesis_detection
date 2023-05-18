@@ -6,6 +6,7 @@ from sensor_msgs.msg import PointCloud2
 import queue
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from time import time
+from scipy.spatial.transform import Rotation as rot_mat
 from utils.o3d_funcs import pcl_voxel
 from sensor_msgs.msg import PointCloud2
 from models.Pointnet import PointNetSeg
@@ -17,7 +18,7 @@ from scipy.spatial import KDTree
 from utils.human_detector_utils import tfmsg_to_matrix, pcl2_to_numpy
 from utils.o3d_funcs import pcl_gicp, pcl_voxel
 from time import time
-
+import matplotlib.pyplot as plt
 
 class HumanPoseEstimator(Node):
     def __init__(self, lidar_list, det_model, args):
@@ -36,7 +37,9 @@ class HumanPoseEstimator(Node):
         for lidar in lidar_list:
             self.lidar_sub[lidar] = Subscriber(self, PointCloud2, lidar)
         self.curr_lidar = queue.Queue(maxsize=100)
-        
+        self.last_pos = queue.Queue(maxsize=10)
+        self.missing, self.no_match, self.fall_p = False, False, False
+
     def read_lidar_frames(self, msg):
         """
         Read the LiDAR frames in the beginning only.
@@ -70,7 +73,11 @@ class HumanPoseEstimator(Node):
             pcl_time += lidar_N[lidar_i].header.stamp.sec + lidar_N[lidar_i].header.stamp.nanosec * 1e-9
         if self.curr_lidar.full(): self.curr_lidar.get_nowait()         # removes old pcls when new has come
         self.curr_lidar.put({'data': total_pcl, 'time': pcl_time / len(self.lidar_list)})
-    
+        if((self.last_pos.qsize() > 0) and \
+            (pcl_time / len(self.lidar_list) - self.last_pos.queue[self.last_pos.qsize() - 1]['det_time'] > 1.5)):
+            self.missing = True
+        else:   self.missing = False
+
     def find_closest_pcl(self, det_time):
         cur_msg = []
         while(not self.curr_lidar.empty()):
@@ -96,31 +103,48 @@ class HumanPoseEstimator(Node):
             tfs = []
             for j, pose in enumerate(self.poses):
                 pose = pcl_voxel(pose, 0.02)
+                pose[:, 2] += full_human_seg[:, 2].max() - pose[:, 2].max()
                 gicp_res = pcl_gicp(pose, full_human_seg, 3)
                 scores.append(gicp_res.fitness)
                 tfs.append(gicp_res.transformation[:3, :3])
             if(np.max(scores) < 0.25): continue
             print(np.argmax(scores))
 
+    def check_human_stand(self, human_pos, human_seg, pcl):
+        sub_pcl = pcl[np.linalg.norm(pcl - human_pos.reshape(-1, 3), axis=1) < 2.5]
+        sub_pcl_tree = KDTree(sub_pcl)
+        human_seg_tree = KDTree(human_seg)
+        idxs = sub_pcl_tree.query_ball_tree(human_seg_tree, r=0.5)
+        logic_vector = np.array([True if len(idx) > 0 else False for idx in idxs])
+        if(logic_vector.sum() == 0): return 0
+        full_human_seg = sub_pcl[logic_vector] - human_pos
+        pose = pcl_voxel(self.poses[1], 0.02)
+        pose[:, 2] += full_human_seg[:, 2].max() - pose[:, 2].max()
+        gicp_res = pcl_gicp(pose, full_human_seg, 2)
+        return gicp_res.fitness
 
     def human_det_call(self, human_seg, human_det):
         det_time = human_seg.header.stamp.sec + human_seg.header.stamp.nanosec * 1e-9
         human_seg = pcl2_to_numpy(human_seg)
         human_det = pcl2_to_numpy(human_det)
         matched_pcl = self.find_closest_pcl(det_time)
-        if len(matched_pcl) == 0:
-            return
-        else:
-            matched_pcl = matched_pcl['data']
+        if len(matched_pcl) == 0:   return
+        else:   matched_pcl = matched_pcl['data']
         # split the segmentations to humans
         human_tree = KDTree(human_det)
         _, ii = human_tree.query(human_seg, k=1)
         ii = ii.reshape(-1, )
-        human_seg = [human_seg[ii == idx] for idx in np.unique(ii)]
+        human_seg = [human_seg[ii == idx] for idx in np.unique(ii) if (ii == idx).sum() > 0]
+        if(len(human_seg) == 0): return
         # find the pose for each human
-        self.find_human_pose(human_det, human_seg, matched_pcl)
+        # self.find_human_pose(human_det, human_seg, matched_pcl)
+        # check if human has fallen
+        if self.last_pos.full(): self.last_pos.get_nowait()
+        self.last_pos.put({'pos': human_seg[0][:, 2].max(), 'det_time':det_time})                 # only one human 
+        self.fall_p = True if human_seg[0][:, 2].max() < 1.3 else False
+        self.no_match = True if self.check_human_stand(human_det[0], human_seg[0], matched_pcl) < 0.5 else False
 
-
+        if(self.fall_p or self.no_match or self.missing): print('Human may have fallen')
 
 def main():
     with open('config/human_det_conf.yaml', 'r') as file:

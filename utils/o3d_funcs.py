@@ -287,7 +287,6 @@ def first_person_plot_kitti(pcl_file, labels_file, fov_up=15, fov_down=-15, proj
     return proj_range
 
 def pcl_gicp(pcl1, pcl2, itters=10):
-    pcl1 += pcl2[:, 2].max() - pcl1[:, 2].max()
     gicp_res_best, score_best = 0, 0
     for i in range(itters):
         init_rot = np.eye(4, 4)
