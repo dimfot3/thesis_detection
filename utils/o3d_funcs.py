@@ -286,11 +286,14 @@ def first_person_plot_kitti(pcl_file, labels_file, fov_up=15, fov_down=-15, proj
     proj_range[proj_y, proj_x] = curve
     return proj_range
 
-def pcl_gicp(pcl1, pcl2):
-    if type(pcl1) != type(np.ndarray((1,1))):
-        gicp_res = o3d.pipelines.registration.registration_icp(pcl1, pcl2, max_correspondence_distance=0.8)
-    else:
-        gicp_res = o3d.pipelines.registration.registration_icp(numpy_to_o3d(pcl1), numpy_to_o3d(pcl2), 0.1, np.eye(4, 4), 
-                                                               o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-                                                               o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=1000))
-    return gicp_res
+def pcl_gicp(pcl1, pcl2, itters=10):
+    pcl1 += pcl2[:, 2].max() - pcl1[:, 2].max()
+    gicp_res_best, score_best = 0, 0
+    for i in range(itters):
+        init_rot = np.eye(4, 4)
+        init_rot[:3, :3] = rot_mat.from_euler('z', -np.pi  + i * 2 * np.pi / itters, degrees=False).as_matrix()
+        gicp_res = o3d.pipelines.registration.registration_icp(numpy_to_o3d(pcl1), numpy_to_o3d(pcl2), 0.1, init_rot, 
+                                                                o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+                                                                o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=400))
+        if(gicp_res.fitness >= score_best): gicp_res_best, score_best = gicp_res, gicp_res.fitness
+    return gicp_res_best

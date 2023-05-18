@@ -11,14 +11,14 @@ def merge_boxes_output(pcl, centers, yout, boxes):
     """
     tree = KDTree(pcl)
     annots = np.zeros((pcl.shape[0], ))
-    # times = np.zeros((pcl.shape[0], ))
+    times = np.zeros((pcl.shape[0], ))
     for i, box in enumerate(boxes):
         box += centers[i]
         _, idxs = tree.query(box, k=1)
         idxs = idxs.reshape(-1, )
         annots[idxs] = np.maximum(annots[idxs], yout[i].reshape(-1, ))
-        # times[np.intersect1d(idxs, np.argwhere(yout[i] > 0.001).reshape(-1, ))] += 1
-    # annots[times > 0] /= times[times > 0]
+        times[np.intersect1d(idxs, np.argwhere(yout[i] > 0.001).reshape(-1, ))] += 1
+    annots[times > 0] /= times[times > 0]
     pcl = np.hstack((pcl, annots.reshape(-1, 1))).astype('float32')
     return pcl
 

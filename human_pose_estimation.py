@@ -26,16 +26,16 @@ class HumanPoseEstimator(Node):
         self.max_hum = args['max_hum']
         self.lidar_frames, self.lidar_pcl, self.lidar_times = {}, {}, {}
         self.det_model = det_model
-        self.files = ['showdown', 'standing', 'handsup2']
+        self.files = ['standing', 'showdown', 'handsup2']
         self.poses = self.load_model(self.files)
         self.tf_sub = self.create_subscription(TFMessage, '/tf', self.read_lidar_frames, 20)
         self.det_sync = ApproximateTimeSynchronizer([Subscriber(self, PointCloud2, '/human_seg'), \
             Subscriber(self, PointCloud2, '/human_detections')], queue_size=10, slop=0.2)
-        self.det_sync.registerCallback(self.find_human_pose)
+        self.det_sync.registerCallback(self.human_det_call)
         self.lidar_sub = {}
         for lidar in lidar_list:
             self.lidar_sub[lidar] = Subscriber(self, PointCloud2, lidar)
-        self.curr_lidar = queue.Queue(maxsize=50)
+        self.curr_lidar = queue.Queue(maxsize=100)
         
     def read_lidar_frames(self, msg):
         """
@@ -53,7 +53,9 @@ class HumanPoseEstimator(Node):
     def load_model(self, files):
         poses = []
         for file in files:
-            poses.append(np.fromfile(f'models/{file}.npy', dtype='float32').reshape(-1, 3))
+            pose = np.fromfile(f'models/{file}.npy', dtype='float32').reshape(-1, 3)
+            pose -= pose.mean(axis=0)
+            poses.append(pose)
         return poses
 
     def read_lidar(self, *lidar_N):
@@ -81,8 +83,27 @@ class HumanPoseEstimator(Node):
                 else:
                     continue
         return cur_msg
+    
+    def find_human_pose(self, human_det, humans_seg, pcl):
+        for i, human_pos in enumerate(human_det.reshape(-1, 3)):
+            sub_pcl = pcl[np.linalg.norm(pcl - human_pos.reshape(-1, 3), axis=1) < 2.5]
+            sub_pcl_tree = KDTree(sub_pcl)
+            human_seg_tree = KDTree(humans_seg[i])
+            idxs = sub_pcl_tree.query_ball_tree(human_seg_tree, r=0.5)
+            logic_vector = np.array([True if len(idx) > 0 else False for idx in idxs])
+            full_human_seg = sub_pcl[logic_vector] - human_pos
+            scores = []
+            tfs = []
+            for j, pose in enumerate(self.poses):
+                pose = pcl_voxel(pose, 0.02)
+                gicp_res = pcl_gicp(pose, full_human_seg, 3)
+                scores.append(gicp_res.fitness)
+                tfs.append(gicp_res.transformation[:3, :3])
+            if(np.max(scores) < 0.25): continue
+            print(np.argmax(scores))
 
-    def find_human_pose(self, human_seg, human_det):
+
+    def human_det_call(self, human_seg, human_det):
         det_time = human_seg.header.stamp.sec + human_seg.header.stamp.nanosec * 1e-9
         human_seg = pcl2_to_numpy(human_seg)
         human_det = pcl2_to_numpy(human_det)
@@ -91,27 +112,15 @@ class HumanPoseEstimator(Node):
             return
         else:
             matched_pcl = matched_pcl['data']
-
         # split the segmentations to humans
         human_tree = KDTree(human_det)
         _, ii = human_tree.query(human_seg, k=1)
         ii = ii.reshape(-1, )
         human_seg = [human_seg[ii == idx] for idx in np.unique(ii)]
-        
         # find the pose for each human
-        for i, human_pos in enumerate(human_det.reshape(-1, 3)):
-            sub_pcl = matched_pcl[np.linalg.norm(matched_pcl - human_pos.reshape(-1, 3), axis=1) < 3]
-            sub_pcl_tree = KDTree(sub_pcl)
-            human_seg_tree = KDTree(human_seg[i])
-            idxs = sub_pcl_tree.query_ball_tree(human_seg_tree, r=0.5)
-            logic_vector = np.array([True if len(idx) > 0 else False for idx in idxs])
-            full_human_seg = sub_pcl[logic_vector] - human_pos
-            scores = []
-            for j, pose in enumerate(self.poses):
-                # pose = pcl_voxel(pose, 0.1)
-                gicp_res = pcl_gicp(full_human_seg, pose)
-                scores.append(gicp_res.fitness)
-            print(self.files[np.argmax(scores)])
+        self.find_human_pose(human_det, human_seg, matched_pcl)
+
+
 
 def main():
     with open('config/human_det_conf.yaml', 'r') as file:
