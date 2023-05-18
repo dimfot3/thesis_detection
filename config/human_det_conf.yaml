@@ -2,9 +2,9 @@ lidar_list: ['lidar_1']
 model_name: 'Pointnet2'
 weights: './results/E36_v01.17.pt'
 batch_size: 7
-det_thresh: 0.5          # minimum probability score for a point to belong to human
-u_det_thresh: 0.7          # minimum probability score for a point to belong to human
-min_human_p: 50             # minimum points to be considered valid human
+det_thresh: 0.2          # minimum probability score for a point to belong to human
+u_det_thresh: 0.6          # minimum probability score for a point to belong to human
+min_human_p: 20             # minimum points to be considered valid human
 min_points_hdb: 15          # this minimum points is used for hierarchichal clustering
 voxel_size: 0.1            # voxel dowsample in model's input
 max_dist_hum: 0.5           # it is used in dbscan where semantic segmnentation transforms to instance
@@ -23,4 +23,16 @@ hdbscan_rate: 5             # how frequently to run hdscan clustering except fro
 #voxel_size: 0.1            # voxel dowsample in model's input
 #max_dist_hum: 0.5           # it is used in dbscan where semantic segmnentation transforms to instance
 #min_hum_dist_cluster: 0.2   # minimum distance for targeting clustering clusters to be merged
+
+
+#batch_size: 7
+#det_thresh: 0.5          # minimum probability score for a point to belong to human
+#u_det_thresh: 0.7          # minimum probability score for a point to belong to human
+#min_human_p: 50             # minimum points to be considered valid human
+#min_points_hdb: 15          # this minimum points is used for hierarchichal clustering
+#voxel_size: 0.1            # voxel dowsample in model's input
+#max_dist_hum: 0.5           # it is used in dbscan where semantic segmnentation transforms to instance
+#max_hum: 1                 # maximum number of human to detect
+#min_hum_dist_cluster: 0.2   # minimum distance for targeting clustering clusters to be merged
+#hdbscan_rate: 5             # how frequently to run hdscan clustering except from targeting
 
