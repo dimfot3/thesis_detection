@@ -63,14 +63,15 @@ class Augmentator:
         return pcl, labels
 
 if __name__ == '__main__':
-    augmentator = Augmentator(remove_p=0.3, noise_std=0.08, add_points_p=0.05, rot_prob=[0.1, 0.6, 0.2])
-    data_file = h5py.File('../test.h5py', 'r')
+    augmentator = Augmentator(remove_p=0.0, noise_std=0.00, add_points_p=0.0, rot_prob=[0.0, 0.0, 0.0])
+    data_file = h5py.File('/home/fdimitri/workspace/Thesis/Thesis_Detection/datasets/JRDB/test_data.h5py', 'r')
     splitted_pcl, splitted_ann, centers = data_file['pcls'][0:10], \
                                         data_file['annotations'][0:10], \
                                         data_file['centers'][0:10]
     splitted_pcl, splitted_ann = augmentator.apply_augmentation(splitted_pcl, splitted_ann)
-
+    splitted_ann = splitted_ann > 0
     for i in range(10):
+        i = 5
         print(splitted_pcl.shape, splitted_ann.shape)
         ax = plt.subplot(1, 1, 1, projection='3d')
         ax.scatter(splitted_pcl[i, ~splitted_ann[i], 0], splitted_pcl[i, ~splitted_ann[i], 1], splitted_pcl[i, ~splitted_ann[i], 2], c='blue')

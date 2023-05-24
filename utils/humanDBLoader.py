@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import h5py
-from utils.DataAugemnetations import Augmentator
+from utils.DataAugmnetations import Augmentator
 
 class humanDBLoader(Dataset):
     def __init__(self, data_path, batch_size=32, augmentation=False):
