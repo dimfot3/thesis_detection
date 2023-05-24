@@ -19,14 +19,20 @@ from utils.human_detector_utils import tfmsg_to_matrix, pcl2_to_numpy
 from utils.o3d_funcs import pcl_gicp, pcl_voxel
 from time import time
 import matplotlib.pyplot as plt
+from rclpy.node import Node
+from std_msgs.msg import String
+
 
 class HumanPoseEstimator(Node):
-    def __init__(self, lidar_list, det_model, args):
+    def __init__(self, lidar_list, det_model, fall_det, pose_det, args):
         super().__init__('human_pose_estim')
         self.lidar_list = lidar_list
         self.max_hum = args['max_hum']
         self.lidar_frames, self.lidar_pcl, self.lidar_times = {}, {}, {}
         self.det_model = det_model
+        self.fall_det, self.pose_det = fall_det, pose_det
+        self.current_pose = None
+        self.last_lidar_time = 0
         self.files = ['standing', 'showdown', 'handsup2']
         self.poses = self.load_model(self.files)
         self.tf_sub = self.create_subscription(TFMessage, '/tf', self.read_lidar_frames, 20)
@@ -38,7 +44,10 @@ class HumanPoseEstimator(Node):
             self.lidar_sub[lidar] = Subscriber(self, PointCloud2, lidar)
         self.curr_lidar = queue.Queue(maxsize=100)
         self.last_pos = queue.Queue(maxsize=10)
-        self.missing, self.no_match, self.fall_p = False, False, False
+        self.pose_publisher = self.create_publisher(String, 'human_pose', 10)
+        self.timer_ = self.create_timer(0.05, self.pose_message_pub)
+        if self.fall_det:
+            self.missing, self.no_match, self.fall_p = False, False, False
 
     def read_lidar_frames(self, msg):
         """
@@ -72,11 +81,7 @@ class HumanPoseEstimator(Node):
         for lidar_i, lidar in enumerate(self.lidar_list):
             pcl_time += lidar_N[lidar_i].header.stamp.sec + lidar_N[lidar_i].header.stamp.nanosec * 1e-9
         if self.curr_lidar.full(): self.curr_lidar.get_nowait()         # removes old pcls when new has come
-        self.curr_lidar.put({'data': total_pcl, 'time': pcl_time / len(self.lidar_list)})
-        if((self.last_pos.qsize() > 0) and \
-            (pcl_time / len(self.lidar_list) - self.last_pos.queue[self.last_pos.qsize() - 1]['det_time'] > 1.5)):
-            self.missing = True
-        else:   self.missing = False
+        self.curr_lidar.put({'data': total_pcl, 'time': pcl_time / len(self.lidar_list)})        
 
     def find_closest_pcl(self, det_time):
         cur_msg = []
@@ -104,11 +109,11 @@ class HumanPoseEstimator(Node):
             for j, pose in enumerate(self.poses):
                 pose = pcl_voxel(pose, 0.02)
                 pose[:, 2] += full_human_seg[:, 2].max() - pose[:, 2].max()
-                gicp_res = pcl_gicp(pose, full_human_seg, 3)
+                gicp_res = pcl_gicp(pose, full_human_seg, 5)
                 scores.append(gicp_res.fitness)
                 tfs.append(gicp_res.transformation[:3, :3])
             if(np.max(scores) < 0.25): continue
-            print(np.argmax(scores))
+            self.current_pose = self.files[np.argmax(scores)]
 
     def check_human_stand(self, human_pos, human_seg, pcl):
         sub_pcl = pcl[np.linalg.norm(pcl - human_pos.reshape(-1, 3), axis=1) < 2.5]
@@ -137,15 +142,34 @@ class HumanPoseEstimator(Node):
         human_seg = [human_seg[ii == idx] for idx in np.unique(ii) if (ii == idx).sum() > 0]
         if(len(human_seg) == 0): return
         # find the pose for each human
-        # self.find_human_pose(human_det, human_seg, matched_pcl)
-        # check if human has fallen
-        if self.last_pos.full(): self.last_pos.get_nowait()
-        self.last_pos.put({'pos': human_seg[0][:, 2].max(), 'det_time':det_time})                 # only one human 
-        self.fall_p = True if human_seg[0][:, 2].max() < 1.3 else False
-        self.no_match = True if self.check_human_stand(human_det[0], human_seg[0], matched_pcl) < 0.5 else False
-
-        if(self.fall_p or self.no_match or self.missing): print('Human may have fallen')
-
+        if self.pose_det:
+            self.find_human_pose(human_det, human_seg, matched_pcl)
+        if self.fall_det:
+            # check if human has fallen
+            if self.last_pos.full(): self.last_pos.get_nowait()
+            self.last_pos.put({'pos': human_seg[0][:, 2].max(), 'det_time':det_time})                 # only one human 
+            self.fall_p = True if human_seg[0][:, 2].max() < 1.4 else False
+            self.no_match = True if self.check_human_stand(human_det[0], human_seg[0], matched_pcl) < 0.5 else False
+    
+    def pose_message_pub(self):
+        if self.fall_det:
+            if(((self.last_pos.qsize() > 0) and (self.curr_lidar.qsize() > 0)) and \
+                (self.curr_lidar.queue[self.curr_lidar.qsize() - 1]['time'] - self.last_pos.queue[self.last_pos.qsize() - 1]['det_time'] > 1.5)):
+                self.missing = True
+            else:   self.missing = False
+        msg_data = ''
+        if(self.current_pose!=None):
+            msg_data += f'Candidate pose {self.current_pose}\n'
+            self.current_pose = None
+        if(self.fall_det):
+            if(self.missing or self.no_match or self.fall_p): 
+                msg_data += f'Falling points:{self.fall_p}, Missing some time:{self.missing}, No standing pose:{self.no_match}'
+                msg_data += '\nHuman may have fallen!'
+        if(msg_data == ''): return
+        msg = String()
+        msg.data = msg_data
+        self.pose_publisher.publish(msg)
+        
 def main():
     with open('config/human_det_conf.yaml', 'r') as file:
         args = yaml.safe_load(file)
@@ -157,7 +181,7 @@ def main():
         model = PointNetSeg(1).to('cuda:0').eval()      
         model.load_state_dict(torch.load(args['weights']))
     model.eval()
-    human = HumanPoseEstimator(args['lidar_list'], model, args)
+    human = HumanPoseEstimator(args['lidar_list'], model, True, False, args)
     rclpy.spin(human)           # start ros2 node
     rclpy.shutdown()        # end ros2 session
 
