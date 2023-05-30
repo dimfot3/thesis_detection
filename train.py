@@ -168,6 +168,7 @@ def train_pointnet(traindata, args, valid_data=None):
         # batch loop
         for batch_input, targets, _ in tqdm(train_loader, desc=f'Epoch {epoch}: '):
             if batch_input.size(0) < 2: continue # skip batches with single or none items
+            args['optimizer'].zero_grad()
             (btc_prec, btc_rec, btc_f1, btc_loss), _ = process_batch(batch_input, targets, args, False)
             epoch_log['prec'], epoch_log['recall'], epoch_log['f1'], epoch_log['loss'] = \
             epoch_log['prec'] + btc_prec, epoch_log['recall'] + btc_rec, epoch_log['f1'] + btc_f1, epoch_log['loss'] + btc_loss
