@@ -69,9 +69,13 @@ The process we utilized for the preprocessing of the training dataset unfolded a
 
 The described pipeline can be found inside ``create_hdf5.py`` file inside ``datasets`` folder. 
 
+# Training and Evaluation Datasets
+For training of Pointner models we exploited JRDB [[6]](#6) dataset.
+We also used simulated point clouds produced in Gazebo simulation [[4]](#4). Some rosbags can be found here [[5]](#5), but for more example you can come in contact with author at ``fotiou.dimitris3@gmail.com``.
 ## Links and Citations
 <a id="1">[1]</a> Thesis report: https://drive.google.com/file/d/1bU3LGlbmP9Ni8-itYjfeBEJv9t3pE1vR/view?usp=sharing <br>
 <a id="2">[2]</a> ROS2 humble: https://docs.ros.org/en/humble/index.html <br>
 <a id="3">[3]</a> Thesis Simulation: https://github.com/dimfot3/thesis_simulation <br>
 <a id="4">[4]</a> CUML and CUDF: https://docs.rapids.ai/install <br>
-
+<a id="5">[5]</a> Experiments at rosbag https://drive.google.com/file/d/19QatfkJotmm934_6fM0lsc7c0UXhCafh/view?usp=sharing <br>
+<a id="6">[6]</a> JRDB dataset: https://jrdb.erc.monash.edu/
