@@ -3,6 +3,28 @@
 The repository below is an integral part of my academic thesis [[1]](#1) at Aristotle University of Thessaloniki's Department of Electrical and Computer Engineering. The main objective of the thesis was to investigate digital indoor reconstruction and human detection algorithms using LiDAR technology. In this repository, we have created a human detector and a plane detector that operate in LiDAR point clouds. We also utilized the human detector to identify three distinct human body positions. In addition, a simple human fall detector was developed. The detectors and apps were created with the help of the intermediary software Robotic Operation System (ROS2). They can operate in real time, either in a Gazebo Simulation environment [[3]](#3) or with actual LiDAR sensors.
 
 This repository contains, in addition to the applications, the functions used for training the human detector model, notably Pointnet and Pointnet2. The trainer, hyperparameter tuner, data processing, and visualization are among these functions. We supply the best weights for these models that produced during training in JRDB dataset. More detailed information regarding the training techniques can be obtained at the provided link [[1]](#1).
+<p align="center">
+
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="results/singlehumandet.gif">
+   <img alt="Single Human detection" alt="drawing" width="40%" height="250">
+ </picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="results/multihumandet.gif">
+  <img alt="Multi human detection" alt="drawing" width="40%" height="250">
+</picture>
+
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="results/handsup_res.png">
+   <img alt="Pose Estimation" alt="drawing" width="40%" height="250">
+ </picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="results/handsup_res.png">
+  <img alt="Big simulated workspace with multiple humans walking" alt="drawing" width="40%" height="250">
+</picture>
+</p>
 
 ## Software Requirements
 Below you can see the software packages and their version used to deployment of this repository.
