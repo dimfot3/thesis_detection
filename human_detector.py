@@ -46,7 +46,10 @@ class HumanDetector(Node):
         
     def read_lidar_frames(self, msg):
         """
-        Read the LiDAR frames in the beginning only.
+        This is a callback function for transformation subscriber
+        Reads the LiDAR frames in the beginning only once for each
+        LiDAR frame and saves it in self.lidar_frames.
+        :param msg: transform type message.
         """
         tf_mat = tfmsg_to_matrix(msg)
         if (msg.transforms[0].child_frame_id not in list(self.lidar_frames.keys())) and \
@@ -57,7 +60,10 @@ class HumanDetector(Node):
     
     def read_lidar(self, *lidar_N):
         """
-        Reads all the lidar pcls and transform them to world frame.
+        This is a callback function for lidar subscriber
+        Waits for N lidar to come in oder to merge and save
+        them in single frame as numpy format in 
+        :param *lidar_N: messages of type pointcloud queue self.curr_lidar
         """
         pcl_time = 0
         pcl_arrays = [pcl2_to_numpy(lidar_N[i], self.lidar_frames[lidar_name]) \
@@ -69,12 +75,17 @@ class HumanDetector(Node):
         self.curr_lidar.put({'data': total_pcl, 'time': pcl_time / len(self.lidar_list)})
 
     def start_detection(self):
+        """
+        This function starts the detection thread
+        """
         print('Detection Started')
         self.detection_thread.start()
 
     def publish_pcl_clusters(self, pcl, clusters):
         """
-        This function publish the clusters of pcl before the model inference.
+        This function publish the clusters of segmented pcl before the model inference.
+        :param pcl: the intial pointcloud
+        :param clusters: a list of list of idxs for each cluster
         """
         if(len(clusters) == 0): return
         labels = np.zeros((pcl.shape[0], 1))
@@ -102,7 +113,9 @@ class HumanDetector(Node):
 
     def publish_humans(self, human_poses, pcl_time):
         """
-        Publish the mean human pose as pcl2.
+        Publish the human poses as pointcloud2.
+        :param human_poses: array Nx3 of N humans poses
+        :param pcl_time: time of detection in float sexonds
         """
         if(human_poses.shape[0] < 1): return
         msg = PointCloud2()
@@ -126,6 +139,9 @@ class HumanDetector(Node):
     def publish_human_seg(self, human_points, pcl_time):
         """
         Publish the human segmentation as pcl2.
+        :param human_poses: array Nx4 with the 3 columns being the 3d points and 
+        4th colum being the semantic annotation value
+        :param pcl_time: time of detection in float sexonds
         """
         if(human_points.shape[0] == 0): return
         pcl = human_points
@@ -149,6 +165,14 @@ class HumanDetector(Node):
         self.human_seg_pub.publish(msg)        
 
     def get_human_poses(self, boxes, centers, pcl, yout):
+        """
+        This transforms the semantic segmentation to human poses.
+        :param boxes: the partitions of initial pointcloud
+        :param centers: the center of each partition in original pointcloud
+        :param pcl: the initial pointcloud
+        :param yout: the model scores for each parititon
+        :return: the huamn poses and the semantic segmentation array Nx4 with only human points
+        """
         pcl, centers, yout, boxes = np.copy(pcl), np.copy(centers), np.copy(yout), np.copy(boxes)
         pcl = merge_boxes_output(pcl, centers, yout, boxes)
         # filter pcl based on minimum probability score
@@ -159,6 +183,12 @@ class HumanDetector(Node):
         return human_poses, pcl[cluster_labels >= 0, :4]
 
     def detection_loop(self):
+        """
+        The main detection loop that is started by start_detection. It wait for the LiDAR frames
+        then until we stop this script it reads LiDARs, merges them to single frame, inference,
+        transform the semantic segmentation to human poses and publish both the semantic segmentation 
+        and the human poses.
+        """
         print('Waiting lidar frames')
         self.tf_frames_event.wait()
         self.destroy_subscription(self.tf_sub)
@@ -199,6 +229,10 @@ class HumanDetector(Node):
             self.publish_pcl_clusters(pcl, cluster_idxs)
 
 def main():
+    """
+    Main function. It reads config file, loads model, initialize the human detector pipeline
+    and starts it.
+    """
     with open('config/human_det_conf.yaml', 'r') as file:
         args = yaml.safe_load(file)
     rclpy.init()        # initialize ros2
