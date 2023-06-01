@@ -16,6 +16,7 @@ from scipy.spatial import Delaunay
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
+from utils.human_detector_utils import tfmsg_to_matrix, pcl2_to_numpy
 import tf2_ros
 
 
@@ -35,7 +36,13 @@ class PlaneDetector(Node):
         self.plane_publisher = self.create_publisher(Marker, 'hull_marker', 10)
         
     def read_lidar_frames(self, msg):
-        tf_mat = self.tfmsg_to_matrix(msg)
+        """
+        This is a callback function for transformation subscriber
+        Reads the LiDAR frames in the beginning only once for each
+        LiDAR frame and saves it in self.lidar_frames.
+        :param msg: transform type message.
+        """
+        tf_mat = tfmsg_to_matrix(msg)
         if (msg.transforms[0].child_frame_id not in list(self.lidar_frames.keys())) and \
             (msg.transforms[0].child_frame_id in self.lidar_list):
             self.lidar_frames[msg.transforms[0].child_frame_id] = tf_mat
@@ -43,41 +50,34 @@ class PlaneDetector(Node):
             self.tf_frames_event.set()
     
     def read_lidar(self, *lidar_N):
+        """
+        This is a callback function for lidar subscriber
+        Waits for N lidar to come in oder to merge and save
+        them in single frame as numpy format in 
+        :param *lidar_N: messages of type pointcloud queue self.curr_lidar
+        """
         lidar_len = len(self.lidar_list)
         pcl_time = 0
-        pcl_arrays = [self.pcl2_to_numpy(lidar_N[i], self.lidar_frames[lidar_name]) \
+        pcl_arrays = [pcl2_to_numpy(lidar_N[i], self.lidar_frames[lidar_name]) \
                       for i, lidar_name in enumerate(self.lidar_list)]
         total_pcl = np.concatenate(pcl_arrays, axis=0)
         for lidar_i, lidar in enumerate(self.lidar_list):
             pcl_time += lidar_N[lidar_i].header.stamp.sec + lidar_N[lidar_i].header.stamp.nanosec * 1e-9
         if self.curr_lidar.full(): self.curr_lidar.get_nowait()
         self.curr_lidar.put({'data': total_pcl, 'time': pcl_time / len(self.lidar_list)})
-    
-    def tfmsg_to_matrix(self, tf_msg):            # move to utils
-        # Extract the transform information from the message
-        transform = tf_msg.transforms[0].transform
-        translation = transform.translation
-        rotation = transform.rotation
-        translation_array = np.array([translation.x, translation.y, translation.z])
-        rotation_array = np.array([rotation.x, rotation.y, rotation.z, rotation.w])
-        rotation_matrix = Rotation.from_quat(rotation_array).as_matrix()[:3, :3]
-        translation_matrix = np.eye(4)
-        translation_matrix[:3, 3], translation_matrix[:3, :3], translation_matrix[3, 3] = translation_array, \
-                                                                            rotation_matrix, 1
-        return translation_matrix
-
-    def pcl2_to_numpy(self, msg, tf):
-        pc = ros2_numpy.numpify(msg)
-        points= pc['xyz']
-        points = points[np.all(np.isfinite(points), axis=1)]
-        points = np.dot(points, tf[:3, :3].T) + tf[:3, 3].T
-        return points
 
     def start_detection(self):
+        """
+        This function starts the plane detection thread.
+        """
         print('Detection Started')
         self.detection_thread.start()
 
     def publish_planes(self, areas_points):
+        """
+        This function publish the planes as Marker.TRIANGLE_LIST.
+        :param areas_points: a lists of points for every plane
+        """
         total_triangle_vert = np.array([]).reshape(-1, 3)
         for area_points in areas_points:
             try:
@@ -103,6 +103,10 @@ class PlaneDetector(Node):
         self.plane_publisher.publish(marker)
     
     def detection_loop(self):
+        """
+        The main detection loop. It waits for the LiDAR frames to read them once. When the 
+        LiDAR pcl have come, perform the custom detection pipeline.
+        """
         print('Waiting lidar frames')
         self.tf_frames_event.wait()
         self.destroy_subscription(self.tf_sub)
@@ -120,7 +124,8 @@ class PlaneDetector(Node):
 
 def main():
     rclpy.init()        # initialize ros2
-    plane_det = PlaneDetector(['lidar_1', 'lidar_2'])        # initialize Human detector node
+    # HERE PUT THE LIDAR TOPICS you want to read
+    plane_det = PlaneDetector(['lidar_1'])        # initialize Human detector node
     plane_det.start_detection()      # start detection
     rclpy.spin(plane_det)           # start ros2 node
     rclpy.shutdown()        # end ros2 session
