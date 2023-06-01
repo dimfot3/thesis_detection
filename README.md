@@ -21,7 +21,7 @@ This repository contains, in addition to the applications, the functions used fo
  </picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="results/handsup_res.png">
+  <source media="(prefers-color-scheme: dark)" srcset="results/plane_det_ex.png">
   <img alt="Big simulated workspace with multiple humans walking" alt="drawing" width="40%" height="250">
 </picture>
 </p>
