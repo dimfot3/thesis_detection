@@ -58,6 +58,8 @@ The basic detector pipeline is similar, but instead of Pointnet Models, it emplo
 4. Carry out plane detection 
 5. Add the planes to the ROS2 topic ``/hull_marker`` as ``TRIANGLE_LIST`` of type ``Marker`` that can be visualized with ``RVIZ``.
 
+To try the plane detector, just fill in the main function the list of LiDAR topics you want to merge and run ``python3 plane_detector.py``.
+
 ## Training Human Detector
 In this repository you can found a training script for Pointnet and Pointet++ models. The training configuration happens in ``train_config.yaml`` file. The training script is well documented and you can run by simply run ``python3 train.py``. More details about the strategic of training procedures can be found in thesis report [[1]](#1). The training script offers both local monitoring with outputs in console and saving of models' state in every validation step but also online monitoring with Weight and Biases. 
 
